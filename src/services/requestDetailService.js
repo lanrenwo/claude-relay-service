@@ -609,7 +609,21 @@ class RequestDetailService {
       durationMs,
       isLongContextRequest: detail.isLongContextRequest === true,
       reasoningDisplay: detail.reasoningDisplay || reasoningInfo.reasoningDisplay || null,
-      reasoningSource: detail.reasoningSource || reasoningInfo.reasoningSource || null
+      reasoningSource: detail.reasoningSource || reasoningInfo.reasoningSource || null,
+      codexUsageSnapshot:
+        detail.codexUsageSnapshot && typeof detail.codexUsageSnapshot === 'object'
+          ? detail.codexUsageSnapshot
+          : null,
+      imageGeneration:
+        detail.imageGeneration &&
+        typeof detail.imageGeneration === 'object' &&
+        Number(detail.imageGeneration.count) > 0
+          ? {
+              count: Number(detail.imageGeneration.count) || 0,
+              format: detail.imageGeneration.format || null,
+              size: detail.imageGeneration.size || null
+            }
+          : null
     }
 
     if (options.bodyPreviewEnabled && requestBodySource !== undefined) {

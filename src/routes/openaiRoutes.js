@@ -139,6 +139,57 @@ function applyCodexCliAdaptation(body = {}) {
   body.instructions = CODEX_CLI_INSTRUCTIONS
 }
 
+const CODEX_IMAGE_BRIDGE_MARKER = '<codex-image-generation-bridge>'
+const CODEX_IMAGE_BRIDGE_TEXT = `${CODEX_IMAGE_BRIDGE_MARKER}
+When the user asks for raster image generation or editing, use the OpenAI Responses native \`image_generation\` tool attached to this request. The local Codex client may not expose an \`image_gen\` namespace, but that does not mean image generation is unavailable. Do not ask the user to switch to CLI fallback solely because \`image_gen\` is absent.
+</codex-image-generation-bridge>`
+
+function hasImageGenerationTool(body = {}) {
+  if (!body || typeof body !== 'object' || !Array.isArray(body.tools)) {
+    return false
+  }
+  return body.tools.some(
+    (t) =>
+      t &&
+      typeof t === 'object' &&
+      typeof t.type === 'string' &&
+      t.type.trim() === 'image_generation'
+  )
+}
+
+function ensureImageGenerationTool(body = {}) {
+  if (!body || typeof body !== 'object') {
+    return false
+  }
+  const tool = { type: 'image_generation', output_format: 'png' }
+  if (!Array.isArray(body.tools)) {
+    body.tools = [tool]
+    return true
+  }
+  if (hasImageGenerationTool(body)) {
+    return false
+  }
+  body.tools.push(tool)
+  return true
+}
+
+function applyCodexImageGenerationBridgeInstructions(body = {}) {
+  if (!body || typeof body !== 'object' || !hasImageGenerationTool(body)) {
+    return false
+  }
+  const existing = typeof body.instructions === 'string' ? body.instructions : ''
+  if (existing.includes(CODEX_IMAGE_BRIDGE_MARKER)) {
+    return false
+  }
+  const trimmed = existing.replace(/[ \t\r\n]+$/, '')
+  if (!trimmed.trim()) {
+    body.instructions = CODEX_IMAGE_BRIDGE_TEXT
+  } else {
+    body.instructions = `${trimmed}\n\n${CODEX_IMAGE_BRIDGE_TEXT}`
+  }
+  return true
+}
+
 async function applyRateLimitTracking(
   req,
   usageSummary,
@@ -404,18 +455,47 @@ const handleResponses = async (req, res) => {
       req.body.model = schedulerModel
     }
 
+    if (ensureImageGenerationTool(req.body)) {
+      logger.info('🖼️ Injected /responses image_generation tool for Codex backend')
+    }
+    if (applyCodexImageGenerationBridgeInstructions(req.body)) {
+      logger.info('🖼️ Added Codex image_generation bridge instructions')
+    }
+
     const upstreamRequestedModel = req.body?.model || requestedModel
 
     // 基于白名单构造上游所需的请求头，确保键为小写且值受控
     const incoming = req.headers || {}
 
-    const allowedKeys = ['version', 'openai-beta', 'session_id']
+    const allowedKeys = [
+      'version',
+      'openai-beta',
+      'session_id',
+      'originator',
+      'user-agent',
+      'x-codex-version',
+      'x-codex-client-version',
+      'x-codex-account-id'
+    ]
 
     const headers = {}
     for (const key of allowedKeys) {
       if (incoming[key] !== undefined) {
         headers[key] = incoming[key]
       }
+    }
+
+    if (!headers['originator']) {
+      headers['originator'] = 'codex_cli_rs'
+    }
+    if (!headers['user-agent']) {
+      headers['user-agent'] = 'codex_cli_rs/9.99.0'
+    }
+    if (!headers['version']) {
+      headers['version'] = '9.99.0'
+    }
+    if (!headers['openai-beta']) {
+      headers['openai-beta'] = 'responses=experimental'
     }
 
     // 覆盖或新增必要头部
@@ -678,6 +758,28 @@ const handleResponses = async (req, res) => {
     let actualModel = null
     let usageReported = false
     let rateLimitDetected = false
+    const imageGenerationStats = { count: 0, format: null, size: null }
+    const recordImageGenerationItem = (item) => {
+      if (!item || typeof item !== 'object') {
+        return
+      }
+      if (item.type !== 'image_generation_call') {
+        return
+      }
+      const result = typeof item.result === 'string' ? item.result.trim() : ''
+      if (!result) {
+        return
+      }
+      imageGenerationStats.count += 1
+      if (!imageGenerationStats.format && typeof item.output_format === 'string') {
+        imageGenerationStats.format = item.output_format
+      }
+      if (!imageGenerationStats.size && typeof item.size === 'string') {
+        imageGenerationStats.size = item.size
+      }
+    }
+    const buildImageGenerationMeta = () =>
+      imageGenerationStats.count > 0 ? { ...imageGenerationStats } : null
     let rateLimitResetsInSeconds = null
 
     if (!isStream) {
@@ -691,6 +793,9 @@ const handleResponses = async (req, res) => {
         // 从响应中获取实际的 model 和 usage
         actualModel = responseData.model || upstreamRequestedModel || 'gpt-4'
         usageData = responseData.usage
+        if (Array.isArray(responseData.output)) {
+          responseData.output.forEach(recordImageGenerationItem)
+        }
 
         logger.debug(`📊 Non-stream response - Model: ${actualModel}, Usage:`, usageData)
 
@@ -715,7 +820,9 @@ const handleResponses = async (req, res) => {
             createRequestDetailMeta(req, {
               requestBody: req.body,
               stream: false,
-              statusCode: upstream.status
+              statusCode: upstream.status,
+              codexUsageSnapshot,
+              imageGeneration: buildImageGenerationMeta()
             })
           )
 
@@ -768,6 +875,14 @@ const handleResponses = async (req, res) => {
           usageData = eventData.response.usage
           logger.debug('📊 Captured OpenAI usage data:', usageData)
         }
+
+        if (Array.isArray(eventData.response.output)) {
+          eventData.response.output.forEach(recordImageGenerationItem)
+        }
+      }
+
+      if (eventData.type === 'response.output_item.done') {
+        recordImageGenerationItem(eventData.item)
       }
 
       // 检查是否有限流错误
@@ -838,7 +953,9 @@ const handleResponses = async (req, res) => {
             createRequestDetailMeta(req, {
               requestBody: req.body,
               stream: true,
-              statusCode: res.statusCode
+              statusCode: res.statusCode,
+              codexUsageSnapshot,
+              imageGeneration: buildImageGenerationMeta()
             })
           )
 
