@@ -157,6 +157,15 @@ function hasImageGenerationTool(body = {}) {
   )
 }
 
+function hasImageGenerationOptions(body = {}) {
+  if (!body || typeof body !== 'object') {
+    return false
+  }
+  return [body.image_generation, body.imageGeneration].some(
+    (value) => value && typeof value === 'object' && Object.keys(value).length > 0
+  )
+}
+
 function isImageGenerationIntent(body = {}) {
   if (!body || typeof body !== 'object') {
     return false
@@ -168,6 +177,10 @@ function isImageGenerationIntent(body = {}) {
   }
 
   if (hasImageGenerationTool(body)) {
+    return true
+  }
+
+  if (hasImageGenerationOptions(body)) {
     return true
   }
 
@@ -553,7 +566,9 @@ const handleResponses = async (req, res) => {
       }
     }
 
-    if (isImageGenerationIntent(req.body) && apiKeyData.allowImageGeneration !== true) {
+    const imageGenerationIntent = isImageGenerationIntent(req.body)
+
+    if (imageGenerationIntent && apiKeyData.allowImageGeneration !== true) {
       logger.security(
         `🚫 API Key ${apiKeyData.id || 'unknown'} 未启用生图服务，拒绝 ${req.originalUrl}`
       )
@@ -598,16 +613,8 @@ const handleResponses = async (req, res) => {
       schedulerModel
     ))
 
-    if (apiKeyData.allowImageGeneration === true && accountType !== 'openai-responses') {
-      if (ensureImageGenerationTool(req.body)) {
-        logger.info('🖼️ Injected /responses image_generation tool for Codex backend')
-      }
-      if (applyCodexImageGenerationBridgeInstructions(req.body)) {
-        logger.info('🖼️ Added Codex image_generation bridge instructions')
-      }
-    }
-
-    if (apiKeyData.allowImageGeneration === true && isImageGenerationIntent(req.body)) {
+    // 并发判定必须基于服务端注入工具前的显式生图意图，避免普通文本请求因注入工具而占用生图槽位。
+    if (apiKeyData.allowImageGeneration === true && imageGenerationIntent) {
       const imageSlot = await acquireImageGenerationSlot(req, res, apiKeyData)
       if (!imageSlot.acquired) {
         logger.security(
@@ -628,6 +635,15 @@ const handleResponses = async (req, res) => {
         logger.api(
           `🖼️ Acquired image_generation slot for key: ${apiKeyData.id || 'unknown'}, current: ${imageSlot.currentConcurrency}, limit: ${imageSlot.limit}`
         )
+      }
+    }
+
+    if (apiKeyData.allowImageGeneration === true) {
+      if (ensureImageGenerationTool(req.body)) {
+        logger.info('🖼️ Injected /responses image_generation tool for Codex backend')
+      }
+      if (applyCodexImageGenerationBridgeInstructions(req.body)) {
+        logger.info('🖼️ Added Codex image_generation bridge instructions')
       }
     }
 

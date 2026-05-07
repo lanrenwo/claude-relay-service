@@ -83,6 +83,17 @@ describe('requestDetailService', () => {
           effort: 'medium'
         },
         prompt: 'hello'
+      },
+      imageGeneration: {
+        count: 2,
+        format: 'png',
+        size: '1024x1024',
+        quality: 'high',
+        items: [
+          { format: 'png', size: '1024x1024', quality: 'high' },
+          { format: 'webp', size: '512x512', quality: 'medium', model: 'gpt-image-1' },
+          { format: 'jpeg', size: '256x256' }
+        ]
       }
     })
 
@@ -99,6 +110,16 @@ describe('requestDetailService', () => {
     expect(storedPayload.endpoint).toBe('/openai/v1/responses')
     expect(storedPayload.reasoningDisplay).toBe('medium')
     expect(storedPayload.reasoningSource).toBe('reasoning.effort')
+    expect(storedPayload.imageGeneration).toMatchObject({
+      count: 2,
+      format: 'png',
+      size: '1024x1024',
+      quality: 'high',
+      items: [
+        { format: 'png', size: '1024x1024', quality: 'high' },
+        { format: 'webp', size: '512x512', quality: 'medium', model: 'gpt-image-1' }
+      ]
+    })
     expect(multi.zadd).toHaveBeenCalled()
     expect(exec).toHaveBeenCalled()
   })

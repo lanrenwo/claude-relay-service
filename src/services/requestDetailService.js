@@ -168,6 +168,30 @@ function normalizeImageGenerationMeta(value) {
     const n = Number(raw)
     return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null
   }
+  const items = Array.isArray(value.items)
+    ? value.items
+        .slice(0, Math.trunc(count))
+        .map((item) => {
+          if (!item || typeof item !== 'object') {
+            return null
+          }
+          const normalizedItem = {
+            format: optionalString(item.format),
+            size: optionalString(item.size),
+            quality: optionalString(item.quality),
+            background: optionalString(item.background),
+            action: optionalString(item.action),
+            model: optionalString(item.model)
+          }
+          Object.keys(normalizedItem).forEach((key) => {
+            if (normalizedItem[key] === null) {
+              delete normalizedItem[key]
+            }
+          })
+          return Object.keys(normalizedItem).length > 0 ? normalizedItem : null
+        })
+        .filter(Boolean)
+    : []
   return {
     count: Math.trunc(count),
     format: optionalString(value.format),
@@ -178,7 +202,8 @@ function normalizeImageGenerationMeta(value) {
     toolModel: optionalString(value.toolModel),
     inputTokens: optionalPositiveInt(value.inputTokens),
     outputTokens: optionalPositiveInt(value.outputTokens),
-    totalTokens: optionalPositiveInt(value.totalTokens)
+    totalTokens: optionalPositiveInt(value.totalTokens),
+    items
   }
 }
 
