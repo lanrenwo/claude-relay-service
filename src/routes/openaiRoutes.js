@@ -157,15 +157,6 @@ function hasImageGenerationTool(body = {}) {
   )
 }
 
-function hasImageGenerationOptions(body = {}) {
-  if (!body || typeof body !== 'object') {
-    return false
-  }
-  return [body.image_generation, body.imageGeneration].some(
-    (value) => value && typeof value === 'object' && Object.keys(value).length > 0
-  )
-}
-
 function isImageGenerationIntent(body = {}) {
   if (!body || typeof body !== 'object') {
     return false
@@ -177,10 +168,6 @@ function isImageGenerationIntent(body = {}) {
   }
 
   if (hasImageGenerationTool(body)) {
-    return true
-  }
-
-  if (hasImageGenerationOptions(body)) {
     return true
   }
 

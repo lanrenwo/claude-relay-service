@@ -746,9 +746,7 @@ describe('openai responses payload toggles', () => {
         model: 'gpt-4.1',
         prompt_cache_key: 'image-limit-key',
         stream: false,
-        image_generation: {
-          output_format: 'png'
-        }
+        tools: [{ type: 'image_generation', output_format: 'png' }]
       },
       apiKeyOverrides: {
         allowImageGeneration: true,
