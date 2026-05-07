@@ -157,6 +157,27 @@ function hasImageGenerationTool(body = {}) {
   )
 }
 
+function removeImageGenerationTool(body = {}) {
+  if (!body || typeof body !== 'object' || !Array.isArray(body.tools)) {
+    return false
+  }
+
+  const originalLength = body.tools.length
+  body.tools = body.tools.filter(
+    (tool) =>
+      !(
+        tool &&
+        typeof tool === 'object' &&
+        typeof tool.type === 'string' &&
+        tool.type.trim().toLowerCase() === 'image_generation'
+      )
+  )
+  if (body.tools.length === 0) {
+    delete body.tools
+  }
+  return body.tools?.length !== originalLength
+}
+
 function isImageGenerationIntent(body = {}) {
   if (!body || typeof body !== 'object') {
     return false
@@ -164,10 +185,6 @@ function isImageGenerationIntent(body = {}) {
 
   const model = typeof body.model === 'string' ? body.model.trim().toLowerCase() : ''
   if (model.startsWith('gpt-image-')) {
-    return true
-  }
-
-  if (hasImageGenerationTool(body)) {
     return true
   }
 
@@ -566,6 +583,10 @@ const handleResponses = async (req, res) => {
           code: 'image_generation_disabled'
         }
       })
+    }
+
+    if (apiKeyData.allowImageGeneration !== true && removeImageGenerationTool(req.body)) {
+      logger.info('🖼️ Removed advertised image_generation tool for API key without image service')
     }
 
     // 从最终请求体中提取 service_tier，用于后续费用计算

@@ -554,11 +554,27 @@ describe('openai responses payload toggles', () => {
     expect(forwardedReq.body.instructions).toContain('<codex-image-generation-bridge>')
   })
 
-  test('rejects explicit image generation when the API key image service is disabled', async () => {
+  test('strips advertised image_generation tools when the API key image service is disabled', async () => {
     const req = createReq({
       body: {
         model: 'gpt-4.1',
         tools: [{ type: 'image_generation' }]
+      }
+    })
+
+    await openaiRoutes.handleResponses(req, createRes())
+
+    expect(openaiResponsesRelayService.handleRequest).toHaveBeenCalled()
+    const forwardedReq = openaiResponsesRelayService.handleRequest.mock.calls[0][0]
+    expect(forwardedReq.body.tools).toBeUndefined()
+  })
+
+  test('rejects explicit image_generation tool choice when the API key image service is disabled', async () => {
+    const req = createReq({
+      body: {
+        model: 'gpt-4.1',
+        tools: [{ type: 'image_generation' }],
+        tool_choice: 'image_generation'
       }
     })
     const res = createRes()
@@ -746,7 +762,8 @@ describe('openai responses payload toggles', () => {
         model: 'gpt-4.1',
         prompt_cache_key: 'image-limit-key',
         stream: false,
-        tools: [{ type: 'image_generation', output_format: 'png' }]
+        tools: [{ type: 'image_generation', output_format: 'png' }],
+        tool_choice: 'image_generation'
       },
       apiKeyOverrides: {
         allowImageGeneration: true,
@@ -770,7 +787,8 @@ describe('openai responses payload toggles', () => {
     const req = createReq({
       body: {
         model: 'gpt-4.1',
-        tools: [{ type: 'image_generation' }]
+        tools: [{ type: 'image_generation' }],
+        tool_choice: 'image_generation'
       },
       apiKeyOverrides: {
         allowImageGeneration: true,
