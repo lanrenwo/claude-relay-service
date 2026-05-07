@@ -559,13 +559,16 @@ const handleResponses = async (req, res) => {
       schedulerModel
     ))
 
-    // 如果是 OpenAI-Responses 账户，使用专门的中继服务处理
-    if (accountType === 'openai-responses') {
-      logger.info(`🔀 Using OpenAI-Responses relay service for account: ${account.name}`)
-      return await openaiResponsesRelayService.handleRequest(req, res, account, apiKeyData)
+    if (apiKeyData.allowImageGeneration === true && accountType !== 'openai-responses') {
+      if (ensureImageGenerationTool(req.body)) {
+        logger.info('🖼️ Injected /responses image_generation tool for Codex backend')
+      }
+      if (applyCodexImageGenerationBridgeInstructions(req.body)) {
+        logger.info('🖼️ Added Codex image_generation bridge instructions')
+      }
     }
 
-    if (apiKeyData.allowImageGeneration === true) {
+    if (apiKeyData.allowImageGeneration === true && isImageGenerationIntent(req.body)) {
       const imageSlot = await acquireImageGenerationSlot(req, res, apiKeyData)
       if (!imageSlot.acquired) {
         logger.security(
@@ -589,18 +592,17 @@ const handleResponses = async (req, res) => {
       }
     }
 
+    // 如果是 OpenAI-Responses 账户，使用专门的中继服务处理
+    if (accountType === 'openai-responses') {
+      logger.info(`🔀 Using OpenAI-Responses relay service for account: ${account.name}`)
+      return await openaiResponsesRelayService.handleRequest(req, res, account, apiKeyData)
+    }
+
     if (schedulerModel !== requestedModel) {
       logger.info(
         `📝 Standard Responses request normalized model ${requestedModel} -> ${schedulerModel} for OpenAI Codex backend`
       )
       req.body.model = schedulerModel
-    }
-
-    if (apiKeyData.allowImageGeneration === true && ensureImageGenerationTool(req.body)) {
-      logger.info('🖼️ Injected /responses image_generation tool for Codex backend')
-    }
-    if (applyCodexImageGenerationBridgeInstructions(req.body)) {
-      logger.info('🖼️ Added Codex image_generation bridge instructions')
     }
 
     const upstreamRequestedModel = req.body?.model || requestedModel

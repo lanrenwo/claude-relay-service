@@ -655,6 +655,30 @@ describe('openai responses payload toggles', () => {
     expect(redis.decrConcurrency).toHaveBeenCalled()
   })
 
+  test('enforces image concurrency before relaying openai-responses accounts', async () => {
+    redis.incrConcurrency.mockResolvedValue(2)
+
+    const req = createReq({
+      body: {
+        model: 'gpt-4.1',
+        tools: [{ type: 'image_generation' }]
+      },
+      apiKeyOverrides: {
+        allowImageGeneration: true,
+        imageConcurrencyLimit: 1,
+        enableOpenAIResponsesCodexAdaptation: false
+      }
+    })
+    const res = createRes()
+
+    await openaiRoutes.handleResponses(req, res)
+
+    expect(res.status).toHaveBeenCalledWith(429)
+    expect(res.payload.error.code).toBe('image_concurrency_limit_exceeded')
+    expect(openaiResponsesRelayService.handleRequest).not.toHaveBeenCalled()
+    expect(redis.decrConcurrency).toHaveBeenCalled()
+  })
+
   test('does not apply the new rule flow to compact responses routes', async () => {
     const req = createReq({
       path: '/v1/responses/compact',
