@@ -649,35 +649,13 @@ const handleResponses = async (req, res) => {
     // 基于白名单构造上游所需的请求头，确保键为小写且值受控
     const incoming = req.headers || {}
 
-    const allowedKeys = [
-      'version',
-      'openai-beta',
-      'session_id',
-      'originator',
-      'user-agent',
-      'x-codex-version',
-      'x-codex-client-version',
-      'x-codex-account-id'
-    ]
+    const allowedKeys = ['version', 'openai-beta', 'session_id']
 
     const headers = {}
     for (const key of allowedKeys) {
       if (incoming[key] !== undefined) {
         headers[key] = incoming[key]
       }
-    }
-
-    if (!headers['originator']) {
-      headers['originator'] = 'codex_cli_rs'
-    }
-    if (!headers['user-agent']) {
-      headers['user-agent'] = 'codex_cli_rs/9.99.0'
-    }
-    if (!headers['version']) {
-      headers['version'] = '9.99.0'
-    }
-    if (!headers['openai-beta']) {
-      headers['openai-beta'] = 'responses=experimental'
     }
 
     // 覆盖或新增必要头部
