@@ -153,8 +153,35 @@ function hasImageGenerationTool(body = {}) {
       t &&
       typeof t === 'object' &&
       typeof t.type === 'string' &&
-      t.type.trim() === 'image_generation'
+      t.type.trim().toLowerCase() === 'image_generation'
   )
+}
+
+function isImageGenerationIntent(body = {}) {
+  if (!body || typeof body !== 'object') {
+    return false
+  }
+
+  const model = typeof body.model === 'string' ? body.model.trim().toLowerCase() : ''
+  if (model.startsWith('gpt-image-')) {
+    return true
+  }
+
+  if (hasImageGenerationTool(body)) {
+    return true
+  }
+
+  const toolChoice = body.tool_choice
+  if (typeof toolChoice === 'string') {
+    return toolChoice.trim().toLowerCase() === 'image_generation'
+  }
+  if (toolChoice && typeof toolChoice === 'object') {
+    return [toolChoice.type, toolChoice.name]
+      .filter((value) => typeof value === 'string')
+      .some((value) => value.trim().toLowerCase() === 'image_generation')
+  }
+
+  return false
 }
 
 function ensureImageGenerationTool(body = {}) {
@@ -171,6 +198,83 @@ function ensureImageGenerationTool(body = {}) {
   }
   body.tools.push(tool)
   return true
+}
+
+function summarizeUpstreamError(error) {
+  const responseData = error.response?.data
+  let responseSummary = undefined
+
+  if (typeof responseData === 'string') {
+    responseSummary = responseData.slice(0, 2000)
+  } else if (responseData && typeof responseData === 'object') {
+    try {
+      responseSummary = JSON.stringify(responseData).slice(0, 2000)
+    } catch (_) {
+      responseSummary = '[unserializable response data]'
+    }
+  }
+
+  return {
+    message: getSafeMessage(error),
+    code: error.code,
+    status: error.statusCode || error.response?.status,
+    method: error.config?.method,
+    url: error.config?.url,
+    response: responseSummary
+  }
+}
+
+async function acquireImageGenerationSlot(req, res, apiKeyData = {}) {
+  if (apiKeyData.allowImageGeneration !== true) {
+    return { acquired: false, skipped: true }
+  }
+
+  const parsedLimit = parseInt(apiKeyData.imageConcurrencyLimit ?? 1)
+  const limit = Number.isFinite(parsedLimit) ? parsedLimit : 1
+  if (limit <= 0) {
+    return { acquired: true, skipped: true }
+  }
+
+  const requestId = crypto.randomUUID()
+  const concurrencyKey = `image_generation:${apiKeyData.id || 'unknown'}`
+  const leaseSeconds = Math.max(
+    parseInt(process.env.IMAGE_GENERATION_CONCURRENCY_LEASE_SECONDS || '900'),
+    60
+  )
+  const current = await redis.incrConcurrency(concurrencyKey, requestId, leaseSeconds)
+
+  if (current > limit) {
+    await redis.decrConcurrency(concurrencyKey, requestId).catch((error) => {
+      logger.error('Failed to release rejected image_generation slot:', error)
+    })
+    return { acquired: false, currentConcurrency: current - 1, limit }
+  }
+
+  let released = false
+  const release = () => {
+    if (released) {
+      return
+    }
+    released = true
+    redis.decrConcurrency(concurrencyKey, requestId).catch((error) => {
+      logger.error('Failed to release image_generation slot:', error)
+    })
+  }
+
+  res.once('finish', release)
+  res.once('close', release)
+  res.once('error', release)
+  req.once('aborted', release)
+  req.once('close', release)
+
+  req.imageGenerationConcurrencyInfo = {
+    apiKeyId: apiKeyData.id,
+    requestId,
+    concurrencyLimit: limit,
+    release
+  }
+
+  return { acquired: true, currentConcurrency: current, limit, release }
 }
 
 function applyCodexImageGenerationBridgeInstructions(body = {}) {
@@ -410,6 +514,19 @@ const handleResponses = async (req, res) => {
       }
     }
 
+    if (isImageGenerationIntent(req.body) && apiKeyData.allowImageGeneration !== true) {
+      logger.security(
+        `🚫 API Key ${apiKeyData.id || 'unknown'} 未启用生图服务，拒绝 ${req.originalUrl}`
+      )
+      return res.status(403).json({
+        error: {
+          message: 'This API key does not have permission to use image generation',
+          type: 'permission_denied',
+          code: 'image_generation_disabled'
+        }
+      })
+    }
+
     // 从最终请求体中提取 service_tier，用于后续费用计算
     req._serviceTier = req.body?.service_tier || null
 
@@ -448,6 +565,30 @@ const handleResponses = async (req, res) => {
       return await openaiResponsesRelayService.handleRequest(req, res, account, apiKeyData)
     }
 
+    if (apiKeyData.allowImageGeneration === true) {
+      const imageSlot = await acquireImageGenerationSlot(req, res, apiKeyData)
+      if (!imageSlot.acquired) {
+        logger.security(
+          `🚦 Image generation concurrency exceeded for key: ${apiKeyData.id || 'unknown'}, current: ${imageSlot.currentConcurrency}, limit: ${imageSlot.limit}`
+        )
+        res.set('Retry-After', '30')
+        return res.status(429).json({
+          error: {
+            message: `Too many concurrent image generation requests. Limit: ${imageSlot.limit}`,
+            type: 'rate_limit_exceeded',
+            code: 'image_concurrency_limit_exceeded'
+          },
+          currentConcurrency: imageSlot.currentConcurrency,
+          concurrencyLimit: imageSlot.limit
+        })
+      }
+      if (!imageSlot.skipped) {
+        logger.api(
+          `🖼️ Acquired image_generation slot for key: ${apiKeyData.id || 'unknown'}, current: ${imageSlot.currentConcurrency}, limit: ${imageSlot.limit}`
+        )
+      }
+    }
+
     if (schedulerModel !== requestedModel) {
       logger.info(
         `📝 Standard Responses request normalized model ${requestedModel} -> ${schedulerModel} for OpenAI Codex backend`
@@ -455,7 +596,7 @@ const handleResponses = async (req, res) => {
       req.body.model = schedulerModel
     }
 
-    if (ensureImageGenerationTool(req.body)) {
+    if (apiKeyData.allowImageGeneration === true && ensureImageGenerationTool(req.body)) {
       logger.info('🖼️ Injected /responses image_generation tool for Codex backend')
     }
     if (applyCodexImageGenerationBridgeInstructions(req.body)) {
@@ -1076,7 +1217,7 @@ const handleResponses = async (req, res) => {
     req.on('close', cleanup)
     req.on('aborted', cleanup)
   } catch (error) {
-    logger.error('Proxy to ChatGPT codex/responses failed:', error)
+    logger.error('Proxy to ChatGPT codex/responses failed:', summarizeUpstreamError(error))
     // 优先使用主动设置的 statusCode，然后是上游响应的状态码，最后默认 500
     const status = error.statusCode || error.response?.status || 500
 

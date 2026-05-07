@@ -355,6 +355,60 @@
             </div>
           </div>
 
+          <!-- 生图服务 -->
+          <div>
+            <label class="mb-3 block text-sm font-semibold text-gray-700 dark:text-gray-300"
+              >生图服务</label
+            >
+            <div class="flex flex-wrap gap-4">
+              <label class="flex cursor-pointer items-center">
+                <input
+                  v-model="form.allowImageGeneration"
+                  class="mr-2"
+                  type="radio"
+                  :value="null"
+                />
+                <span class="text-sm text-gray-700">不修改</span>
+              </label>
+              <label class="flex cursor-pointer items-center">
+                <input
+                  v-model="form.allowImageGeneration"
+                  class="mr-2"
+                  type="radio"
+                  :value="true"
+                />
+                <span class="text-sm text-gray-700">启用生图服务</span>
+              </label>
+              <label class="flex cursor-pointer items-center">
+                <input
+                  v-model="form.allowImageGeneration"
+                  class="mr-2"
+                  type="radio"
+                  :value="false"
+                />
+                <span class="text-sm text-gray-700">关闭生图服务</span>
+              </label>
+            </div>
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              默认关闭；只给专用生图 Key 开启，避免 image_generation 流量影响普通用户。
+            </p>
+            <div class="mt-3 max-w-xs">
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                生图并发限制
+              </label>
+              <input
+                v-model.number="form.imageConcurrencyLimit"
+                class="form-input border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                min="0"
+                placeholder="不修改"
+                type="number"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                留空表示不修改；填 0 表示不单独限制生图并发。
+              </p>
+            </div>
+          </div>
+
           <!-- 专属账号绑定 -->
           <div>
             <div class="mb-3 flex items-center justify-between">
@@ -556,6 +610,8 @@ const form = reactive({
   openaiAccountId: '',
   bedrockAccountId: '',
   droidAccountId: '',
+  allowImageGeneration: null,
+  imageConcurrencyLimit: '',
   tags: [],
   isActive: null // null表示不修改
 })
@@ -786,6 +842,12 @@ const batchUpdateApiKeys = async () => {
     // 权限设置
     if (form.permissions !== '') {
       updates.permissions = form.permissions
+    }
+    if (form.allowImageGeneration !== null) {
+      updates.allowImageGeneration = form.allowImageGeneration
+    }
+    if (form.imageConcurrencyLimit !== '' && form.imageConcurrencyLimit !== null) {
+      updates.imageConcurrencyLimit = parseInt(form.imageConcurrencyLimit)
     }
 
     // 账户绑定

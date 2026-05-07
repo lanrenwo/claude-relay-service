@@ -1317,6 +1317,8 @@ const authenticateApiKey = async (req, res, next) => {
       dailyCost: validation.keyData.dailyCost,
       totalCostLimit: validation.keyData.totalCostLimit,
       totalCost: validation.keyData.totalCost,
+      allowImageGeneration: validation.keyData.allowImageGeneration === true,
+      imageConcurrencyLimit: validation.keyData.imageConcurrencyLimit,
       enableOpenAIResponsesCodexAdaptation: validation.keyData.enableOpenAIResponsesCodexAdaptation,
       enableOpenAIResponsesPayloadRules: validation.keyData.enableOpenAIResponsesPayloadRules,
       openaiResponsesPayloadRules: validation.keyData.openaiResponsesPayloadRules

@@ -1495,6 +1495,8 @@ router.post('/api-keys', authenticateAdmin, async (req, res) => {
       serviceRates, // API Key 级别服务倍率
       weeklyResetDay, // 周费用重置日 (1-7)
       weeklyResetHour, // 周费用重置时 (0-23)
+      allowImageGeneration,
+      imageConcurrencyLimit,
       enableOpenAIResponsesCodexAdaptation,
       enableOpenAIResponsesPayloadRules,
       openaiResponsesPayloadRules
@@ -1630,6 +1632,21 @@ router.post('/api-keys', authenticateAdmin, async (req, res) => {
       return res.status(400).json({ error: serviceRatesError })
     }
 
+    if (allowImageGeneration !== undefined && typeof allowImageGeneration !== 'boolean') {
+      return res.status(400).json({ error: 'allowImageGeneration must be a boolean' })
+    }
+
+    if (
+      imageConcurrencyLimit !== undefined &&
+      imageConcurrencyLimit !== null &&
+      imageConcurrencyLimit !== '' &&
+      (!Number.isInteger(Number(imageConcurrencyLimit)) || Number(imageConcurrencyLimit) < 0)
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'Image concurrency limit must be a non-negative integer' })
+    }
+
     if (
       enableOpenAIResponsesCodexAdaptation !== undefined &&
       typeof enableOpenAIResponsesCodexAdaptation !== 'boolean'
@@ -1706,6 +1723,13 @@ router.post('/api-keys', authenticateAdmin, async (req, res) => {
         weeklyResetHour !== undefined && weeklyResetHour !== null && weeklyResetHour !== ''
           ? Number(weeklyResetHour)
           : 0,
+      allowImageGeneration: allowImageGeneration === true,
+      imageConcurrencyLimit:
+        imageConcurrencyLimit !== undefined &&
+        imageConcurrencyLimit !== null &&
+        imageConcurrencyLimit !== ''
+          ? Number(imageConcurrencyLimit)
+          : 1,
       enableOpenAIResponsesCodexAdaptation:
         enableOpenAIResponsesCodexAdaptation !== undefined
           ? enableOpenAIResponsesCodexAdaptation
@@ -1755,7 +1779,9 @@ router.post('/api-keys/batch', authenticateAdmin, async (req, res) => {
       activationUnit,
       expirationMode,
       icon,
-      serviceRates
+      serviceRates,
+      allowImageGeneration,
+      imageConcurrencyLimit
     } = req.body
 
     // 输入验证
@@ -1783,6 +1809,21 @@ router.post('/api-keys/batch', authenticateAdmin, async (req, res) => {
     const batchServiceRatesError = validateServiceRates(serviceRates)
     if (batchServiceRatesError) {
       return res.status(400).json({ error: batchServiceRatesError })
+    }
+
+    if (allowImageGeneration !== undefined && typeof allowImageGeneration !== 'boolean') {
+      return res.status(400).json({ error: 'allowImageGeneration must be a boolean' })
+    }
+
+    if (
+      imageConcurrencyLimit !== undefined &&
+      imageConcurrencyLimit !== null &&
+      imageConcurrencyLimit !== '' &&
+      (!Number.isInteger(Number(imageConcurrencyLimit)) || Number(imageConcurrencyLimit) < 0)
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'Image concurrency limit must be a non-negative integer' })
     }
 
     // 生成批量API Keys
@@ -1820,7 +1861,14 @@ router.post('/api-keys/batch', authenticateAdmin, async (req, res) => {
           activationUnit,
           expirationMode,
           icon,
-          serviceRates
+          serviceRates,
+          allowImageGeneration: allowImageGeneration === true,
+          imageConcurrencyLimit:
+            imageConcurrencyLimit !== undefined &&
+            imageConcurrencyLimit !== null &&
+            imageConcurrencyLimit !== ''
+              ? Number(imageConcurrencyLimit)
+              : 1
         })
 
         // 保留原始 API Key 供返回
@@ -1973,6 +2021,25 @@ router.put('/api-keys/batch', authenticateAdmin, async (req, res) => {
         if (updates.serviceRates !== undefined) {
           finalUpdates.serviceRates = updates.serviceRates
         }
+        if (updates.allowImageGeneration !== undefined) {
+          if (typeof updates.allowImageGeneration !== 'boolean') {
+            results.failedCount++
+            results.errors.push(`allowImageGeneration for API key ${keyId} must be a boolean`)
+            continue
+          }
+          finalUpdates.allowImageGeneration = updates.allowImageGeneration
+        }
+        if (updates.imageConcurrencyLimit !== undefined) {
+          const limit = Number(updates.imageConcurrencyLimit)
+          if (!Number.isInteger(limit) || limit < 0) {
+            results.failedCount++
+            results.errors.push(
+              `imageConcurrencyLimit for API key ${keyId} must be a non-negative integer`
+            )
+            continue
+          }
+          finalUpdates.imageConcurrencyLimit = limit
+        }
         if (updates.weeklyResetDay !== undefined) {
           const day = Number(updates.weeklyResetDay)
           if (Number.isInteger(day) && day >= 1 && day <= 7) {
@@ -2122,6 +2189,8 @@ router.put('/api-keys/:keyId', authenticateAdmin, async (req, res) => {
       serviceRates, // API Key 级别服务倍率
       weeklyResetDay, // 周费用重置日 (1-7)
       weeklyResetHour, // 周费用重置时 (0-23)
+      allowImageGeneration,
+      imageConcurrencyLimit,
       enableOpenAIResponsesCodexAdaptation,
       enableOpenAIResponsesPayloadRules,
       openaiResponsesPayloadRules
@@ -2317,6 +2386,26 @@ router.put('/api-keys/:keyId', authenticateAdmin, async (req, res) => {
         return res.status(400).json({ error: singleServiceRatesError })
       }
       updates.serviceRates = serviceRates
+    }
+
+    if (allowImageGeneration !== undefined) {
+      if (typeof allowImageGeneration !== 'boolean') {
+        return res.status(400).json({ error: 'allowImageGeneration must be a boolean' })
+      }
+      updates.allowImageGeneration = allowImageGeneration
+    }
+
+    if (
+      imageConcurrencyLimit !== undefined &&
+      imageConcurrencyLimit !== null &&
+      imageConcurrencyLimit !== ''
+    ) {
+      if (!Number.isInteger(Number(imageConcurrencyLimit)) || Number(imageConcurrencyLimit) < 0) {
+        return res
+          .status(400)
+          .json({ error: 'Image concurrency limit must be a non-negative integer' })
+      }
+      updates.imageConcurrencyLimit = Number(imageConcurrencyLimit)
     }
 
     if (enableOpenAIResponsesCodexAdaptation !== undefined) {

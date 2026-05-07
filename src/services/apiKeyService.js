@@ -204,6 +204,8 @@ class ApiKeyService {
       serviceRates = {}, // API Key 级别服务倍率覆盖
       weeklyResetDay = 1, // 周费用重置日 (1=周一 ... 7=周日)
       weeklyResetHour = 0, // 周费用重置时 (0-23)
+      allowImageGeneration = false,
+      imageConcurrencyLimit = 1,
       enableOpenAIResponsesCodexAdaptation = true,
       enableOpenAIResponsesPayloadRules = false,
       openaiResponsesPayloadRules = []
@@ -266,6 +268,12 @@ class ApiKeyService {
       serviceRates: JSON.stringify(serviceRates || {}), // API Key 级别服务倍率
       weeklyResetDay: String(weeklyResetDay || 1), // 周费用重置日 (1-7)
       weeklyResetHour: String(weeklyResetHour || 0), // 周费用重置时 (0-23)
+      allowImageGeneration: String(allowImageGeneration === true),
+      imageConcurrencyLimit: String(
+        Number.isInteger(Number(imageConcurrencyLimit)) && Number(imageConcurrencyLimit) >= 0
+          ? Number(imageConcurrencyLimit)
+          : 1
+      ),
       enableOpenAIResponsesCodexAdaptation: String(enableOpenAIResponsesCodexAdaptation !== false),
       enableOpenAIResponsesPayloadRules: String(enableOpenAIResponsesPayloadRules === true),
       openaiResponsesPayloadRules: JSON.stringify(payloadRulesValidation.rules)
@@ -336,6 +344,8 @@ class ApiKeyService {
       expiresAt: keyData.expiresAt,
       createdBy: keyData.createdBy,
       serviceRates: JSON.parse(keyData.serviceRates || '{}'), // API Key 级别服务倍率
+      allowImageGeneration: parseBooleanWithDefault(keyData.allowImageGeneration, false),
+      imageConcurrencyLimit: parseInt(keyData.imageConcurrencyLimit || 1),
       enableOpenAIResponsesCodexAdaptation: parseBooleanWithDefault(
         keyData.enableOpenAIResponsesCodexAdaptation,
         true
@@ -501,6 +511,8 @@ class ApiKeyService {
         keyData.enableOpenAIResponsesPayloadRules,
         false
       )
+      const allowImageGeneration = parseBooleanWithDefault(keyData.allowImageGeneration, false)
+      const imageConcurrencyLimit = parseInt(keyData.imageConcurrencyLimit || 1)
 
       return {
         valid: true,
@@ -537,6 +549,8 @@ class ApiKeyService {
           weeklyResetHour: parseInt(keyData.weeklyResetHour || 0),
           tags,
           serviceRates,
+          allowImageGeneration,
+          imageConcurrencyLimit,
           enableOpenAIResponsesCodexAdaptation,
           enableOpenAIResponsesPayloadRules,
           openaiResponsesPayloadRules
@@ -641,6 +655,8 @@ class ApiKeyService {
         keyData.enableOpenAIResponsesPayloadRules,
         false
       )
+      const allowImageGeneration = parseBooleanWithDefault(keyData.allowImageGeneration, false)
+      const imageConcurrencyLimit = parseInt(keyData.imageConcurrencyLimit || 1)
 
       return {
         valid: true,
@@ -686,6 +702,8 @@ class ApiKeyService {
             )) || 0,
           tags,
           usage,
+          allowImageGeneration,
+          imageConcurrencyLimit,
           enableOpenAIResponsesCodexAdaptation,
           enableOpenAIResponsesPayloadRules,
           openaiResponsesPayloadRules
@@ -895,6 +913,8 @@ class ApiKeyService {
           key.enableOpenAIResponsesPayloadRules,
           false
         )
+        key.allowImageGeneration = parseBooleanWithDefault(key.allowImageGeneration, false)
+        key.imageConcurrencyLimit = parseInt(key.imageConcurrencyLimit || 1)
         key.permissions = normalizePermissions(key.permissions)
         key.dailyCostLimit = parseFloat(key.dailyCostLimit || 0)
         key.totalCostLimit = parseFloat(key.totalCostLimit || 0)
@@ -1159,6 +1179,8 @@ class ApiKeyService {
           key.enableOpenAIResponsesPayloadRules,
           false
         )
+        key.allowImageGeneration = parseBooleanWithDefault(key.allowImageGeneration, false)
+        key.imageConcurrencyLimit = parseInt(key.imageConcurrencyLimit || 1)
         key.isActivated = key.isActivated === 'true' || key.isActivated === true
         key.permissions = key.permissions || 'all'
         key.activationUnit = key.activationUnit || 'days'
@@ -1360,6 +1382,8 @@ class ApiKeyService {
         'serviceRates', // API Key 级别服务倍率
         'weeklyResetDay', // 周费用重置日 (1-7)
         'weeklyResetHour', // 周费用重置时 (0-23)
+        'allowImageGeneration',
+        'imageConcurrencyLimit',
         'enableOpenAIResponsesCodexAdaptation',
         'enableOpenAIResponsesPayloadRules',
         'openaiResponsesPayloadRules'
@@ -1384,6 +1408,7 @@ class ApiKeyService {
             field === 'enableModelRestriction' ||
             field === 'enableClientRestriction' ||
             field === 'isActivated' ||
+            field === 'allowImageGeneration' ||
             field === 'enableOpenAIResponsesCodexAdaptation' ||
             field === 'enableOpenAIResponsesPayloadRules'
           ) {
@@ -2448,6 +2473,8 @@ class ApiKeyService {
         droidAccountId: keyData.droidAccountId,
         azureOpenaiAccountId: keyData.azureOpenaiAccountId,
         ccrAccountId: keyData.ccrAccountId,
+        allowImageGeneration: parseBooleanWithDefault(keyData.allowImageGeneration, false),
+        imageConcurrencyLimit: parseInt(keyData.imageConcurrencyLimit || 1),
         enableOpenAIResponsesCodexAdaptation: parseBooleanWithDefault(
           keyData.enableOpenAIResponsesCodexAdaptation,
           true

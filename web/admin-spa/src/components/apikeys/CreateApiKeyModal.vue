@@ -706,6 +706,44 @@
             </p>
           </div>
 
+          <div
+            class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20"
+          >
+            <div class="space-y-3">
+              <label class="flex cursor-pointer items-start gap-3">
+                <input
+                  v-model="form.allowImageGeneration"
+                  class="mt-0.5 h-4 w-4 rounded border-gray-300 bg-gray-100 text-amber-600 focus:ring-amber-500"
+                  type="checkbox"
+                />
+                <span class="flex-1">
+                  <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">
+                    启用生图服务
+                  </span>
+                  <span class="mt-1 block text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                    允许此 Key 使用 OpenAI OAuth 的 image_generation / gpt-image-*
+                    生图能力；默认关闭，用于隔离普通用户流量。
+                  </span>
+                </span>
+              </label>
+              <div v-if="form.allowImageGeneration">
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                  生图并发限制
+                </label>
+                <input
+                  v-model.number="form.imageConcurrencyLimit"
+                  class="form-input border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                  min="0"
+                  placeholder="1"
+                  type="number"
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  默认 1；填 0 表示不单独限制生图并发。
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div>
             <div class="mb-2 flex items-center justify-between">
               <label class="text-sm font-semibold text-gray-700 dark:text-gray-300"
@@ -1114,6 +1152,8 @@ const form = reactive({
   modelInput: '',
   enableClientRestriction: false,
   allowedClients: [],
+  allowImageGeneration: false,
+  imageConcurrencyLimit: 1,
   tags: []
 })
 
@@ -1538,6 +1578,11 @@ const createApiKey = async () => {
       activationDays: form.expirationMode === 'activation' ? form.activationDays : undefined,
       activationUnit: form.expirationMode === 'activation' ? form.activationUnit : undefined,
       permissions: form.permissions,
+      allowImageGeneration: form.allowImageGeneration,
+      imageConcurrencyLimit:
+        form.imageConcurrencyLimit !== '' && form.imageConcurrencyLimit !== null
+          ? parseInt(form.imageConcurrencyLimit)
+          : 1,
       tags: form.tags.length > 0 ? form.tags : undefined,
       enableModelRestriction: form.enableModelRestriction,
       restrictedModels: form.restrictedModels,

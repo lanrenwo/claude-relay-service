@@ -59,7 +59,9 @@ jest.mock('../src/services/apiKeyService', () => ({
 }))
 
 jest.mock('../src/models/redis', () => ({
-  getUsageStats: jest.fn()
+  getUsageStats: jest.fn(),
+  incrConcurrency: jest.fn(),
+  decrConcurrency: jest.fn()
 }))
 
 jest.mock('../src/utils/logger', () => ({
@@ -99,6 +101,7 @@ jest.mock('../src/utils/requestDetailHelper', () => ({
 const unifiedOpenAIScheduler = require('../src/services/scheduler/unifiedOpenAIScheduler')
 const axios = require('axios')
 const apiKeyService = require('../src/services/apiKeyService')
+const redis = require('../src/models/redis')
 const openaiAccountService = require('../src/services/account/openaiAccountService')
 const openaiResponsesAccountService = require('../src/services/account/openaiResponsesAccountService')
 const openaiResponsesRelayService = require('../src/services/relay/openaiResponsesRelayService')
@@ -123,12 +126,14 @@ function createReq({
       'user-agent': userAgent
     },
     body: JSON.parse(JSON.stringify(body)),
+    once: jest.fn(),
     apiKey: {
       id: 'key_1',
       permissions: ['openai'],
       enableOpenAIResponsesCodexAdaptation: true,
       enableOpenAIResponsesPayloadRules: false,
       openaiResponsesPayloadRules: [],
+      imageConcurrencyLimit: 1,
       ...apiKeyOverrides
     },
     _fromUnifiedEndpoint: fromUnifiedEndpoint
@@ -156,7 +161,8 @@ function createRes() {
     set: jest.fn((key, value) => {
       res.headers[key] = value
       return res
-    })
+    }),
+    once: jest.fn()
   }
   return res
 }
@@ -178,6 +184,8 @@ describe('openai responses payload toggles', () => {
 
     openaiResponsesRelayService.handleRequest.mockResolvedValue({ ok: true })
     openaiAccountService.decrypt.mockReturnValue('decrypted-token')
+    redis.incrConcurrency.mockResolvedValue(1)
+    redis.decrConcurrency.mockResolvedValue(0)
   })
 
   test('keeps standard responses payload unchanged for openai-responses when both toggles are off', async () => {
@@ -521,6 +529,130 @@ describe('openai responses payload toggles', () => {
     expect(req._serviceTier).toBe('priority')
     expect(openaiResponsesRelayService.handleRequest).toHaveBeenCalled()
     expect(openaiResponsesRelayService.handleRequest.mock.calls[0][0]._serviceTier).toBe('priority')
+  })
+
+  test('rejects explicit image generation when the API key image service is disabled', async () => {
+    const req = createReq({
+      body: {
+        model: 'gpt-4.1',
+        tools: [{ type: 'image_generation' }]
+      }
+    })
+    const res = createRes()
+
+    await openaiRoutes.handleResponses(req, res)
+
+    expect(res.status).toHaveBeenCalledWith(403)
+    expect(res.payload.error.code).toBe('image_generation_disabled')
+    expect(unifiedOpenAIScheduler.selectAccountForApiKey).not.toHaveBeenCalled()
+  })
+
+  test('does not inject image_generation for normal text requests when image service is disabled', async () => {
+    unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
+      accountId: 'openai-1',
+      accountType: 'openai'
+    })
+    openaiAccountService.getAccount.mockResolvedValue({
+      id: 'openai-1',
+      name: 'OpenAI Account',
+      accessToken: 'encrypted-token',
+      accountId: 'chatgpt-account-1'
+    })
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: { model: 'gpt-4.1', usage: { total_tokens: 0 } },
+      headers: {}
+    })
+
+    const req = createReq({
+      body: {
+        model: 'gpt-4.1',
+        prompt_cache_key: 'text-key',
+        stream: false
+      },
+      apiKeyOverrides: {
+        enableOpenAIResponsesCodexAdaptation: false
+      }
+    })
+
+    await openaiRoutes.handleResponses(req, createRes())
+
+    expect(axios.post).toHaveBeenCalled()
+    expect(axios.post.mock.calls[0][1].tools).toBeUndefined()
+  })
+
+  test('injects the image_generation bridge only for API keys with image service enabled', async () => {
+    unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
+      accountId: 'openai-1',
+      accountType: 'openai'
+    })
+    openaiAccountService.getAccount.mockResolvedValue({
+      id: 'openai-1',
+      name: 'OpenAI Account',
+      accessToken: 'encrypted-token',
+      accountId: 'chatgpt-account-1'
+    })
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: { model: 'gpt-4.1', usage: { total_tokens: 0 } },
+      headers: {}
+    })
+
+    const req = createReq({
+      body: {
+        model: 'gpt-4.1',
+        prompt_cache_key: 'image-key',
+        stream: false
+      },
+      apiKeyOverrides: {
+        allowImageGeneration: true,
+        enableOpenAIResponsesCodexAdaptation: false
+      }
+    })
+
+    await openaiRoutes.handleResponses(req, createRes())
+
+    expect(axios.post).toHaveBeenCalled()
+    expect(axios.post.mock.calls[0][1].tools).toContainEqual({
+      type: 'image_generation',
+      output_format: 'png'
+    })
+    expect(axios.post.mock.calls[0][1].instructions).toContain('<codex-image-generation-bridge>')
+  })
+
+  test('rejects image-enabled API keys when the image concurrency limit is reached', async () => {
+    unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
+      accountId: 'openai-1',
+      accountType: 'openai'
+    })
+    openaiAccountService.getAccount.mockResolvedValue({
+      id: 'openai-1',
+      name: 'OpenAI Account',
+      accessToken: 'encrypted-token',
+      accountId: 'chatgpt-account-1'
+    })
+    redis.incrConcurrency.mockResolvedValue(2)
+
+    const req = createReq({
+      body: {
+        model: 'gpt-4.1',
+        prompt_cache_key: 'image-limit-key',
+        stream: false
+      },
+      apiKeyOverrides: {
+        allowImageGeneration: true,
+        imageConcurrencyLimit: 1,
+        enableOpenAIResponsesCodexAdaptation: false
+      }
+    })
+    const res = createRes()
+
+    await openaiRoutes.handleResponses(req, res)
+
+    expect(res.status).toHaveBeenCalledWith(429)
+    expect(res.payload.error.code).toBe('image_concurrency_limit_exceeded')
+    expect(axios.post).not.toHaveBeenCalled()
+    expect(redis.decrConcurrency).toHaveBeenCalled()
   })
 
   test('does not apply the new rule flow to compact responses routes', async () => {
