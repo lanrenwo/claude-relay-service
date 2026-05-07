@@ -60,7 +60,7 @@ jest.mock('../src/services/apiKeyService', () => ({
 
 jest.mock('../src/models/redis', () => ({
   getUsageStats: jest.fn(),
-  incrConcurrency: jest.fn(),
+  tryAcquireConcurrencySlot: jest.fn(),
   decrConcurrency: jest.fn()
 }))
 
@@ -94,7 +94,7 @@ jest.mock('../src/utils/errorSanitizer', () => ({
 }))
 
 jest.mock('../src/utils/requestDetailHelper', () => ({
-  createRequestDetailMeta: jest.fn(() => null),
+  createRequestDetailMeta: jest.fn((_req, meta) => meta),
   extractOpenAICacheReadTokens: jest.fn(() => 0)
 }))
 
@@ -184,7 +184,7 @@ describe('openai responses payload toggles', () => {
 
     openaiResponsesRelayService.handleRequest.mockResolvedValue({ ok: true })
     openaiAccountService.decrypt.mockReturnValue('decrypted-token')
-    redis.incrConcurrency.mockResolvedValue(1)
+    redis.tryAcquireConcurrencySlot.mockResolvedValue({ acquired: true, count: 1, limit: 1 })
     redis.decrConcurrency.mockResolvedValue(0)
   })
 
@@ -620,6 +620,52 @@ describe('openai responses payload toggles', () => {
     expect(axios.post.mock.calls[0][1].instructions).toContain('<codex-image-generation-bridge>')
   })
 
+  test('passes image generation options into the injected tool', async () => {
+    unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
+      accountId: 'openai-1',
+      accountType: 'openai'
+    })
+    openaiAccountService.getAccount.mockResolvedValue({
+      id: 'openai-1',
+      name: 'OpenAI Account',
+      accessToken: 'encrypted-token',
+      accountId: 'chatgpt-account-1'
+    })
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: { model: 'gpt-4.1', usage: { total_tokens: 0 } },
+      headers: {}
+    })
+
+    const req = createReq({
+      body: {
+        model: 'gpt-4.1',
+        prompt_cache_key: 'image-options-key',
+        stream: false,
+        image_generation: {
+          quality: 'high',
+          size: '1024x1024',
+          background: 'transparent',
+          output_format: 'webp'
+        }
+      },
+      apiKeyOverrides: {
+        allowImageGeneration: true,
+        enableOpenAIResponsesCodexAdaptation: false
+      }
+    })
+
+    await openaiRoutes.handleResponses(req, createRes())
+
+    expect(axios.post.mock.calls[0][1].tools).toContainEqual({
+      type: 'image_generation',
+      quality: 'high',
+      size: '1024x1024',
+      background: 'transparent',
+      output_format: 'webp'
+    })
+  })
+
   test('rejects image-enabled API keys when the image concurrency limit is reached', async () => {
     unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
       accountId: 'openai-1',
@@ -631,7 +677,7 @@ describe('openai responses payload toggles', () => {
       accessToken: 'encrypted-token',
       accountId: 'chatgpt-account-1'
     })
-    redis.incrConcurrency.mockResolvedValue(2)
+    redis.tryAcquireConcurrencySlot.mockResolvedValue({ acquired: false, count: 1, limit: 1 })
 
     const req = createReq({
       body: {
@@ -652,11 +698,11 @@ describe('openai responses payload toggles', () => {
     expect(res.status).toHaveBeenCalledWith(429)
     expect(res.payload.error.code).toBe('image_concurrency_limit_exceeded')
     expect(axios.post).not.toHaveBeenCalled()
-    expect(redis.decrConcurrency).toHaveBeenCalled()
+    expect(redis.decrConcurrency).not.toHaveBeenCalled()
   })
 
   test('enforces image concurrency before relaying openai-responses accounts', async () => {
-    redis.incrConcurrency.mockResolvedValue(2)
+    redis.tryAcquireConcurrencySlot.mockResolvedValue({ acquired: false, count: 1, limit: 1 })
 
     const req = createReq({
       body: {
@@ -676,7 +722,73 @@ describe('openai responses payload toggles', () => {
     expect(res.status).toHaveBeenCalledWith(429)
     expect(res.payload.error.code).toBe('image_concurrency_limit_exceeded')
     expect(openaiResponsesRelayService.handleRequest).not.toHaveBeenCalled()
-    expect(redis.decrConcurrency).toHaveBeenCalled()
+    expect(redis.decrConcurrency).not.toHaveBeenCalled()
+  })
+
+  test('records per-image metadata for multiple generated images', async () => {
+    unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
+      accountId: 'openai-1',
+      accountType: 'openai'
+    })
+    openaiAccountService.getAccount.mockResolvedValue({
+      id: 'openai-1',
+      name: 'OpenAI Account',
+      accessToken: 'encrypted-token',
+      accountId: 'chatgpt-account-1'
+    })
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: {
+        model: 'gpt-4.1',
+        output: [
+          {
+            type: 'image_generation_call',
+            result: 'base64-a',
+            output_format: 'png',
+            size: '1024x1024',
+            quality: 'high'
+          },
+          {
+            type: 'image_generation_call',
+            result: 'base64-b',
+            output_format: 'webp',
+            size: '512x512',
+            quality: 'medium'
+          }
+        ],
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          total_tokens: 2
+        }
+      },
+      headers: {}
+    })
+
+    const req = createReq({
+      body: {
+        model: 'gpt-4.1',
+        tools: [{ type: 'image_generation' }],
+        stream: false
+      },
+      apiKeyOverrides: {
+        allowImageGeneration: true,
+        enableOpenAIResponsesCodexAdaptation: false
+      }
+    })
+
+    await openaiRoutes.handleResponses(req, createRes())
+
+    const meta = apiKeyService.recordUsage.mock.calls[0][9]
+    expect(meta.imageGeneration).toMatchObject({
+      count: 2,
+      format: 'png',
+      size: '1024x1024',
+      items: [
+        { format: 'png', size: '1024x1024', quality: 'high' },
+        { format: 'webp', size: '512x512', quality: 'medium' }
+      ]
+    })
   })
 
   test('does not apply the new rule flow to compact responses routes', async () => {

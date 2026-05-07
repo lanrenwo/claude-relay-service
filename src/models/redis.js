@@ -3202,6 +3202,71 @@ class RedisClient {
     }
   }
 
+  // 原子尝试获取并发槽位（先检查再占位，避免短暂超限）
+  async tryAcquireConcurrencySlot(apiKeyId, requestId, limit, leaseSeconds = null) {
+    if (!requestId) {
+      throw new Error('Request ID is required for concurrency tracking')
+    }
+
+    const concurrencyLimit = parseInt(limit)
+    if (!Number.isFinite(concurrencyLimit) || concurrencyLimit <= 0) {
+      return { acquired: true, count: 0, limit: concurrencyLimit }
+    }
+
+    try {
+      const { leaseSeconds: defaultLeaseSeconds, cleanupGraceSeconds } =
+        this._getConcurrencyConfig()
+      const lease = leaseSeconds || defaultLeaseSeconds
+      const key = `concurrency:${apiKeyId}`
+      const now = Date.now()
+      const expireAt = now + lease * 1000
+      const ttl = Math.max((lease + cleanupGraceSeconds) * 1000, 60000)
+
+      const luaScript = `
+        local key = KEYS[1]
+        local member = ARGV[1]
+        local expireAt = tonumber(ARGV[2])
+        local now = tonumber(ARGV[3])
+        local ttl = tonumber(ARGV[4])
+        local limit = tonumber(ARGV[5])
+
+        redis.call('ZREMRANGEBYSCORE', key, '-inf', now)
+        local count = redis.call('ZCARD', key)
+
+        if count >= limit then
+          return {0, count}
+        end
+
+        redis.call('ZADD', key, expireAt, member)
+        if ttl > 0 then
+          redis.call('PEXPIRE', key, ttl)
+        end
+
+        return {1, count + 1}
+      `
+
+      const result = await this.client.eval(
+        luaScript,
+        1,
+        key,
+        requestId,
+        expireAt,
+        now,
+        ttl,
+        concurrencyLimit
+      )
+      const acquired = Number(result?.[0]) === 1
+      const count = parseInt(result?.[1] || 0)
+      logger.database(
+        `🔢 ${acquired ? 'Acquired' : 'Rejected'} concurrency slot for key ${apiKeyId}: ${count}/${concurrencyLimit} (request ${requestId})`
+      )
+      return { acquired, count, limit: concurrencyLimit }
+    } catch (error) {
+      logger.error('❌ Failed to acquire concurrency slot:', error)
+      throw error
+    }
+  }
+
   // 刷新并发租约，防止长连接提前过期
   async refreshConcurrencyLease(apiKeyId, requestId, leaseSeconds = null) {
     if (!requestId) {
