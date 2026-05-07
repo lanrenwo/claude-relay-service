@@ -233,6 +233,26 @@
                 <span class="relative">管理标签</span>
               </button>
 
+              <!-- 批量开启生图服务按钮 -->
+              <button
+                v-if="selectedApiKeys.length > 0"
+                class="group relative flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 shadow-sm transition-all duration-200 hover:border-emerald-300 hover:bg-emerald-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50 sm:w-auto"
+                :disabled="batchImageGenerationUpdating"
+                @click="batchEnableImageGeneration()"
+              >
+                <div
+                  class="absolute -inset-0.5 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 opacity-0 blur transition duration-300 group-hover:opacity-20"
+                ></div>
+                <i
+                  :class="
+                    batchImageGenerationUpdating
+                      ? 'fas fa-spinner fa-spin relative text-emerald-600 dark:text-emerald-400'
+                      : 'fas fa-image relative text-emerald-600 dark:text-emerald-400'
+                  "
+                />
+                <span class="relative">开启生图 ({{ selectedApiKeys.length }})</span>
+              </button>
+
               <!-- 批量编辑按钮 - 移到刷新按钮旁边 -->
               <button
                 v-if="selectedApiKeys.length > 0"
@@ -2351,6 +2371,7 @@ const showNewApiKeyModal = ref(false)
 const showBatchApiKeyModal = ref(false)
 const showBatchEditModal = ref(false)
 const showTagManagementModal = ref(false)
+const batchImageGenerationUpdating = ref(false)
 const editingApiKey = ref(null)
 const renewingApiKey = ref(null)
 const newApiKeyData = ref(null)
@@ -3856,6 +3877,69 @@ const handleBatchEditSuccess = () => {
   selectedApiKeys.value = []
   updateSelectAllState()
   loadApiKeys()
+}
+
+// 快速批量开启生图服务
+const batchEnableImageGeneration = async () => {
+  const selectedCount = selectedApiKeys.value.length
+  if (selectedCount === 0) {
+    showToast('请先选择要开启生图服务的 API Keys', 'warning')
+    return
+  }
+
+  const confirmed = await showConfirm(
+    '批量开启生图服务',
+    `确定为选中的 ${selectedCount} 个 API Key 开启生图服务吗？生图并发限制会沿用各 Key 当前配置，未配置时按默认值 1 生效。`,
+    '开启生图',
+    '取消',
+    'primary'
+  )
+
+  if (!confirmed) return
+
+  batchImageGenerationUpdating.value = true
+  const keyIds = [...selectedApiKeys.value]
+
+  try {
+    const data = await httpApis.batchUpdateApiKeysApi({
+      keyIds,
+      updates: {
+        allowImageGeneration: true
+      }
+    })
+
+    if (data.success) {
+      const { successCount = 0, failedCount = 0, errors = [] } = data.data || {}
+
+      if (successCount > 0) {
+        showToast(`成功开启 ${successCount} 个 API Key 的生图服务`, 'success')
+
+        if (failedCount > 0) {
+          const errorMessages = errors
+            .map((error) =>
+              typeof error === 'string' ? error : `${error.keyId || 'unknown'}: ${error.error}`
+            )
+            .join('\n')
+          showToast(`${failedCount} 个开启失败:\n${errorMessages}`, 'warning')
+        }
+
+        selectedApiKeys.value = []
+        updateSelectAllState()
+        loadApiKeys()
+      } else {
+        showToast('所有 API Keys 开启生图服务失败', 'error')
+      }
+    } else {
+      showToast(data.message || '批量开启生图服务失败', 'error')
+    }
+  } catch (error) {
+    showToast(
+      error.response?.data?.message || error.response?.data?.error || '批量开启生图服务失败',
+      'error'
+    )
+  } finally {
+    batchImageGenerationUpdating.value = false
+  }
 }
 
 // 处理编辑成功
