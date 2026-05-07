@@ -122,6 +122,19 @@
           </div>
 
           <div
+            v-if="detail.imageGeneration && detail.imageGeneration.count"
+            class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+          >
+            <h4 class="section-title">图像生成详情</h4>
+            <div class="grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
+              <div v-for="row in imageGenerationDetailRows" :key="row.label">
+                <p class="field-label">{{ row.label }}</p>
+                <p class="field-value">{{ row.value }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div
             class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
           >
             <h4 class="section-title">Token 明细</h4>
@@ -189,42 +202,6 @@
               <span>总计</span>
               <strong>{{ formatCost(costBreakdown.total || detail.cost) }}</strong>
             </div>
-          </div>
-        </div>
-
-        <div
-          v-if="codexUsageRows.length"
-          class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
-        >
-          <h4 class="section-title">Codex 用量配额</h4>
-          <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
-            ChatGPT Plus 走 Codex 后端按窗口配额计费（不计入 token 费用）。本次请求返回的窗口快照：
-          </p>
-          <div class="space-y-3">
-            <div v-for="row in codexUsageRows" :key="row.label" class="space-y-1">
-              <div class="flex items-baseline justify-between text-sm">
-                <span class="font-medium text-gray-700 dark:text-gray-200">{{ row.label }}</span>
-                <span class="font-semibold text-gray-900 dark:text-gray-100">
-                  {{ formatPercent(row.usedPercent) }}
-                </span>
-              </div>
-              <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-                <div
-                  class="h-full rounded-full transition-all"
-                  :class="row.barClass"
-                  :style="{ width: `${Math.max(0, Math.min(100, row.usedPercent || 0))}%` }"
-                ></div>
-              </div>
-              <p class="text-xs text-gray-500 dark:text-gray-400">
-                窗口 {{ row.windowLabel }} · 重置 {{ row.resetLabel }}
-              </p>
-            </div>
-            <p
-              v-if="codexUsageOverPercent !== null"
-              class="text-xs text-gray-500 dark:text-gray-400"
-            >
-              主窗口占次窗口比例：{{ formatPercent(codexUsageOverPercent) }}
-            </p>
           </div>
         </div>
 
@@ -421,78 +398,6 @@ const cacheHitRateLabel = computed(() =>
   detail.value?.isOpenAIRelated ? 'cached_tokens / prompt_tokens' : '读 / (读 + 建)'
 )
 
-const formatCodexWindow = (minutes) => {
-  const num = Number(minutes)
-  if (!Number.isFinite(num) || num <= 0) return '未知'
-  if (num >= 1440) {
-    const days = num / 1440
-    return Number.isInteger(days) ? `${days} 天` : `${days.toFixed(1)} 天`
-  }
-  if (num >= 60) {
-    const hours = num / 60
-    return Number.isInteger(hours) ? `${hours} 小时` : `${hours.toFixed(1)} 小时`
-  }
-  return `${num} 分钟`
-}
-
-const formatCodexReset = (seconds) => {
-  const num = Number(seconds)
-  if (!Number.isFinite(num) || num <= 0) return '已重置'
-  if (num >= 86400) {
-    const days = Math.floor(num / 86400)
-    const hours = Math.floor((num % 86400) / 3600)
-    return hours > 0 ? `${days}天${hours}小时后` : `${days}天后`
-  }
-  if (num >= 3600) {
-    const hours = Math.floor(num / 3600)
-    const mins = Math.floor((num % 3600) / 60)
-    return mins > 0 ? `${hours}小时${mins}分钟后` : `${hours}小时后`
-  }
-  if (num >= 60) {
-    return `${Math.floor(num / 60)}分钟后`
-  }
-  return `${Math.floor(num)}秒后`
-}
-
-const codexUsageBarClass = (percent) => {
-  const num = Number(percent) || 0
-  if (num >= 80) return 'bg-red-500 dark:bg-red-400'
-  if (num >= 50) return 'bg-amber-500 dark:bg-amber-400'
-  return 'bg-emerald-500 dark:bg-emerald-400'
-}
-
-const codexUsageRows = computed(() => {
-  const snap = detail.value?.codexUsageSnapshot
-  if (!snap || typeof snap !== 'object') return []
-  const rows = []
-  const primary = Number(snap.primaryUsedPercent)
-  const secondary = Number(snap.secondaryUsedPercent)
-  if (Number.isFinite(primary)) {
-    rows.push({
-      label: '主窗口',
-      usedPercent: primary,
-      windowLabel: formatCodexWindow(snap.primaryWindowMinutes),
-      resetLabel: formatCodexReset(snap.primaryResetAfterSeconds),
-      barClass: codexUsageBarClass(primary)
-    })
-  }
-  if (Number.isFinite(secondary)) {
-    rows.push({
-      label: '次窗口',
-      usedPercent: secondary,
-      windowLabel: formatCodexWindow(snap.secondaryWindowMinutes),
-      resetLabel: formatCodexReset(snap.secondaryResetAfterSeconds),
-      barClass: codexUsageBarClass(secondary)
-    })
-  }
-  return rows
-})
-
-const codexUsageOverPercent = computed(() => {
-  const value = Number(detail.value?.codexUsageSnapshot?.primaryOverSecondaryPercent)
-  return Number.isFinite(value) ? value : null
-})
-
 const imageGenerationLabel = computed(() => {
   const info = detail.value?.imageGeneration
   const count = Number(info?.count) || 0
@@ -501,6 +406,26 @@ const imageGenerationLabel = computed(() => {
   if (info.format) parts.push(String(info.format).toUpperCase())
   if (info.size) parts.push(info.size)
   return parts.join(' · ')
+})
+
+const imageGenerationDetailRows = computed(() => {
+  const info = detail.value?.imageGeneration
+  if (!info || !info.count) return []
+  const rows = []
+  if (info.format) rows.push({ label: '格式', value: String(info.format).toUpperCase() })
+  if (info.size) rows.push({ label: '尺寸', value: info.size })
+  if (info.quality) rows.push({ label: '质量', value: info.quality })
+  if (info.background) rows.push({ label: '背景', value: info.background })
+  if (info.action) rows.push({ label: '操作', value: info.action })
+  if (info.toolModel) rows.push({ label: '图像模型', value: info.toolModel })
+  if (info.totalTokens) {
+    const breakdown = []
+    if (info.inputTokens) breakdown.push(`入 ${formatNumber(info.inputTokens)}`)
+    if (info.outputTokens) breakdown.push(`出 ${formatNumber(info.outputTokens)}`)
+    const suffix = breakdown.length ? ` (${breakdown.join(' / ')})` : ''
+    rows.push({ label: '图像 Token', value: `${formatNumber(info.totalTokens)}${suffix}` })
+  }
+  return rows
 })
 
 const emitClose = () => emit('close')

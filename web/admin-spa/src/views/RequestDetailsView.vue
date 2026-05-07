@@ -250,6 +250,21 @@
 
                   <div class="toolbar-control group">
                     <div
+                      class="toolbar-control-glow bg-gradient-to-r from-amber-500 to-yellow-500"
+                    ></div>
+                    <el-select
+                      v-model="filters.hasImage"
+                      class="toolbar-element w-full"
+                      clearable
+                      placeholder="图像生成"
+                    >
+                      <el-option label="仅含图像" value="yes" />
+                      <el-option label="不含图像" value="no" />
+                    </el-select>
+                  </div>
+
+                  <div class="toolbar-control group">
+                    <div
                       class="toolbar-control-glow bg-gradient-to-r from-slate-500 to-gray-500"
                     ></div>
                     <el-select
@@ -391,6 +406,11 @@
                     推理
                   </th>
                   <th
+                    class="min-w-[110px] px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300"
+                  >
+                    图像
+                  </th>
+                  <th
                     class="min-w-[180px] px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300"
                   >
                     接口
@@ -470,6 +490,42 @@
                   <td class="table-cell">{{ record.model }}</td>
                   <td class="table-cell">{{ formatReasoning(record.reasoningDisplay) }}</td>
                   <td class="table-cell">
+                    <template v-if="record.imageGeneration && record.imageGeneration.count">
+                      <el-tooltip
+                        placement="top"
+                        popper-class="image-generation-tooltip"
+                        :show-after="200"
+                      >
+                        <template #content>
+                          <div class="space-y-1 text-xs">
+                            <div
+                              v-for="row in buildImageTooltipRows(record.imageGeneration)"
+                              :key="row.label"
+                              class="flex items-baseline gap-2"
+                            >
+                              <span class="text-gray-300 dark:text-gray-400"
+                                >{{ row.label }}：</span
+                              >
+                              <span class="break-all text-white">{{ row.value }}</span>
+                            </div>
+                          </div>
+                        </template>
+                        <div class="cursor-help">
+                          <div class="font-medium text-amber-600 dark:text-amber-400">
+                            🖼️ {{ record.imageGeneration.count }} 张
+                          </div>
+                          <div
+                            v-if="formatImageMeta(record.imageGeneration)"
+                            class="text-xs text-gray-500 dark:text-gray-400"
+                          >
+                            {{ formatImageMeta(record.imageGeneration) }}
+                          </div>
+                        </div>
+                      </el-tooltip>
+                    </template>
+                    <template v-else>-</template>
+                  </td>
+                  <td class="table-cell">
                     <div>{{ record.endpoint || '-' }}</div>
                     <div class="text-xs text-gray-500 dark:text-gray-400">
                       {{ record.method || 'POST' }}
@@ -536,6 +592,13 @@
                 <div>API Key：{{ record.apiKeyName || '-' }}</div>
                 <div>账户：{{ record.accountName || '-' }}</div>
                 <div>推理：{{ formatReasoning(record.reasoningDisplay) }}</div>
+                <div v-if="record.imageGeneration && record.imageGeneration.count">
+                  图像：🖼️ {{ record.imageGeneration.count }} 张{{
+                    formatImageMeta(record.imageGeneration)
+                      ? ` · ${formatImageMeta(record.imageGeneration)}`
+                      : ''
+                  }}
+                </div>
                 <div>输入：{{ formatNumber(record.inputTokens) }}</div>
                 <div>输出：{{ formatNumber(record.outputTokens) }}</div>
                 <div>缓存读：{{ formatNumber(record.cacheReadTokens) }}</div>
@@ -627,6 +690,7 @@ const filters = reactive({
   accountId: '',
   model: '',
   endpoint: '',
+  hasImage: '',
   sortOrder: 'desc'
 })
 
@@ -637,6 +701,7 @@ const hasActiveFilters = computed(() => {
     filters.accountId ||
     filters.model ||
     filters.endpoint ||
+    filters.hasImage ||
     (filters.dateRange && filters.dateRange.length === 2)
   )
 })
@@ -665,7 +730,8 @@ const emptyHint = computed(() => {
     filters.apiKeyId ||
     filters.accountId ||
     filters.model ||
-    filters.endpoint
+    filters.endpoint ||
+    filters.hasImage
   ) {
     return '当前筛选条件下没有结果，请尝试放宽搜索条件。'
   }
@@ -708,6 +774,7 @@ const buildParams = (page, snapshotId = activeSnapshotId.value) => {
   if (filters.accountId) params.accountId = filters.accountId
   if (filters.model) params.model = filters.model
   if (filters.endpoint) params.endpoint = filters.endpoint
+  if (filters.hasImage) params.hasImage = filters.hasImage
   if (filters.dateRange && filters.dateRange.length === 2) {
     const [startDate, endDate] = filters.dateRange
     const parsedStart = dayjs(startDate)
@@ -742,6 +809,7 @@ const syncResponseState = (data) => {
   filters.accountId = filterEcho.accountId || ''
   filters.model = filterEcho.model || ''
   filters.endpoint = filterEcho.endpoint || ''
+  filters.hasImage = filterEcho.hasImage || ''
   filters.sortOrder = filterEcho.sortOrder || 'desc'
   if (filterEcho.startDate && filterEcho.endDate) {
     const nextRange = [toPickerDate(filterEcho.startDate), toPickerDate(filterEcho.endDate)]
@@ -824,6 +892,7 @@ const resetFilters = () => {
   filters.accountId = ''
   filters.model = ''
   filters.endpoint = ''
+  filters.hasImage = ''
   filters.sortOrder = 'desc'
   pagination.currentPage = 1
   fetchRecords(1)
@@ -927,6 +996,9 @@ const exportCsv = async () => {
       '消费类型',
       '模型',
       '推理',
+      '图像数',
+      '图像格式',
+      '图像尺寸',
       '接口',
       '输入',
       '输出',
@@ -947,6 +1019,9 @@ const exportCsv = async () => {
         record.accountTypeName || record.accountType || '',
         record.model || '',
         formatReasoning(record.reasoningDisplay),
+        record.imageGeneration?.count || 0,
+        record.imageGeneration?.format || '',
+        record.imageGeneration?.size || '',
         record.endpoint || '',
         record.inputTokens || 0,
         record.outputTokens || 0,
@@ -1003,6 +1078,31 @@ const formatDuration = (value) => `${Number(value || 0)}ms`
 const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`
 const formatReasoning = (value) => value || '-'
 
+const formatImageMeta = (info) => {
+  if (!info) return ''
+  return [info.format, info.size].filter(Boolean).join(' · ')
+}
+
+const buildImageTooltipRows = (info) => {
+  if (!info) return []
+  const rows = []
+  rows.push({ label: '数量', value: `${info.count} 张` })
+  if (info.format) rows.push({ label: '格式', value: String(info.format).toUpperCase() })
+  if (info.size) rows.push({ label: '尺寸', value: info.size })
+  if (info.quality) rows.push({ label: '质量', value: info.quality })
+  if (info.background) rows.push({ label: '背景', value: info.background })
+  if (info.action) rows.push({ label: '操作', value: info.action })
+  if (info.toolModel) rows.push({ label: '图像模型', value: info.toolModel })
+  if (info.totalTokens) {
+    const breakdown = []
+    if (info.inputTokens) breakdown.push(`入 ${formatNumber(info.inputTokens)}`)
+    if (info.outputTokens) breakdown.push(`出 ${formatNumber(info.outputTokens)}`)
+    const suffix = breakdown.length ? ` (${breakdown.join(' / ')})` : ''
+    rows.push({ label: '图像 Token', value: `${formatNumber(info.totalTokens)}${suffix}` })
+  }
+  return rows
+}
+
 const debouncedKeywordFetch = debounce(() => {
   pagination.currentPage = 1
   invalidateSnapshot()
@@ -1017,7 +1117,14 @@ watch(
 )
 
 watch(
-  () => [filters.apiKeyId, filters.accountId, filters.model, filters.endpoint, filters.sortOrder],
+  () => [
+    filters.apiKeyId,
+    filters.accountId,
+    filters.model,
+    filters.endpoint,
+    filters.hasImage,
+    filters.sortOrder
+  ],
   () => {
     debouncedKeywordFetch.cancel()
     pagination.currentPage = 1

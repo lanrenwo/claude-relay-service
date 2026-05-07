@@ -583,7 +583,6 @@ function createRequestDetailMeta(req, overrides = {}) {
     durationMs: durationMs ?? (effectiveStart ? Math.max(0, nowMs - effectiveStart) : null),
     requestStartedAt: effectiveStart ? new Date(effectiveStart).toISOString() : null,
     requestBody,
-    codexUsageSnapshot: overrides.codexUsageSnapshot || null,
     imageGeneration: overrides.imageGeneration || null
   }
 }

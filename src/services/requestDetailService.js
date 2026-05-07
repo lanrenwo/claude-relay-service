@@ -155,6 +155,47 @@ function normalizeOptionalFilterValue(value) {
   return normalized ? normalized : null
 }
 
+function normalizeImageGenerationMeta(value) {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const count = Number(value.count)
+  if (!Number.isFinite(count) || count <= 0) {
+    return null
+  }
+  const optionalString = (raw) => (typeof raw === 'string' && raw.trim() ? raw.trim() : null)
+  const optionalPositiveInt = (raw) => {
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null
+  }
+  return {
+    count: Math.trunc(count),
+    format: optionalString(value.format),
+    size: optionalString(value.size),
+    quality: optionalString(value.quality),
+    background: optionalString(value.background),
+    action: optionalString(value.action),
+    toolModel: optionalString(value.toolModel),
+    inputTokens: optionalPositiveInt(value.inputTokens),
+    outputTokens: optionalPositiveInt(value.outputTokens),
+    totalTokens: optionalPositiveInt(value.totalTokens)
+  }
+}
+
+function normalizeHasImageFilterValue(value) {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const normalized = String(value).trim().toLowerCase()
+  if (normalized === 'yes' || normalized === 'true' || normalized === '1') {
+    return 'yes'
+  }
+  if (normalized === 'no' || normalized === 'false' || normalized === '0') {
+    return 'no'
+  }
+  return null
+}
+
 function createRequestDetailDateBoundarySignature(type, rawValue, effectiveValue, boundaryValue) {
   if (!rawValue) {
     return {
@@ -220,6 +261,7 @@ function createRequestDetailFilterSignature(
     accountId: normalizeOptionalFilterValue(filters.accountId),
     model: normalizeOptionalFilterValue(filters.model),
     endpoint: normalizeOptionalFilterValue(filters.endpoint),
+    hasImage: normalizeHasImageFilterValue(filters.hasImage),
     sortOrder: filters.sortOrder === 'asc' ? 'asc' : 'desc',
     retentionHours:
       retentionHours !== null && retentionHours !== undefined ? Number(retentionHours) : null,
@@ -543,6 +585,7 @@ class RequestDetailService {
         accountId: filters.accountId || null,
         model: filters.model || null,
         endpoint: filters.endpoint || null,
+        hasImage: normalizeHasImageFilterValue(filters.hasImage),
         hasCustomDateRange: Boolean(filters.startDate || filters.endDate),
         sortOrder: filters.sortOrder === 'asc' ? 'asc' : 'desc'
       },
@@ -610,20 +653,7 @@ class RequestDetailService {
       isLongContextRequest: detail.isLongContextRequest === true,
       reasoningDisplay: detail.reasoningDisplay || reasoningInfo.reasoningDisplay || null,
       reasoningSource: detail.reasoningSource || reasoningInfo.reasoningSource || null,
-      codexUsageSnapshot:
-        detail.codexUsageSnapshot && typeof detail.codexUsageSnapshot === 'object'
-          ? detail.codexUsageSnapshot
-          : null,
-      imageGeneration:
-        detail.imageGeneration &&
-        typeof detail.imageGeneration === 'object' &&
-        Number(detail.imageGeneration.count) > 0
-          ? {
-              count: Number(detail.imageGeneration.count) || 0,
-              format: detail.imageGeneration.format || null,
-              size: detail.imageGeneration.size || null
-            }
-          : null
+      imageGeneration: normalizeImageGenerationMeta(detail.imageGeneration)
     }
 
     if (options.bodyPreviewEnabled && requestBodySource !== undefined) {
@@ -1019,6 +1049,15 @@ class RequestDetailService {
     if (filters.endpoint && record.endpoint !== filters.endpoint) {
       return false
     }
+    if (filters.hasImage === 'yes' || filters.hasImage === 'no') {
+      const hasImage = Number(record.imageGeneration?.count) > 0
+      if (filters.hasImage === 'yes' && !hasImage) {
+        return false
+      }
+      if (filters.hasImage === 'no' && hasImage) {
+        return false
+      }
+    }
 
     return true
   }
@@ -1032,6 +1071,7 @@ class RequestDetailService {
       accountId: filters.accountId || null,
       model: filters.model || null,
       endpoint: filters.endpoint || null,
+      hasImage: normalizeHasImageFilterValue(filters.hasImage),
       hasCustomDateRange: Boolean(filters.startDate || filters.endDate),
       sortOrder
     }
@@ -1347,7 +1387,8 @@ class RequestDetailService {
       apiKeyId: normalizeOptionalFilterValue(filters.apiKeyId),
       accountId: normalizeOptionalFilterValue(filters.accountId),
       model: normalizeOptionalFilterValue(filters.model),
-      endpoint: normalizeOptionalFilterValue(filters.endpoint)
+      endpoint: normalizeOptionalFilterValue(filters.endpoint),
+      hasImage: normalizeHasImageFilterValue(filters.hasImage)
     }
     const settings = await this.getSettings()
     const emptyResult = this._emptyListResult(settings, filters)

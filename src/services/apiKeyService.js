@@ -2155,7 +2155,6 @@ class ApiKeyService {
       realCostBreakdown: usageRecord.realCostBreakdown || usageRecord.costBreakdown || null,
       isLongContextRequest:
         usageRecord.isLongContext === true || usageRecord.isLongContextRequest === true,
-      codexUsageSnapshot: requestMeta?.codexUsageSnapshot || null,
       imageGeneration: requestMeta?.imageGeneration || null
     })
   }

@@ -758,7 +758,18 @@ const handleResponses = async (req, res) => {
     let actualModel = null
     let usageReported = false
     let rateLimitDetected = false
-    const imageGenerationStats = { count: 0, format: null, size: null }
+    const imageGenerationStats = {
+      count: 0,
+      format: null,
+      size: null,
+      quality: null,
+      background: null,
+      action: null,
+      toolModel: null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null
+    }
     const recordImageGenerationItem = (item) => {
       if (!item || typeof item !== 'object') {
         return
@@ -776,6 +787,41 @@ const handleResponses = async (req, res) => {
       }
       if (!imageGenerationStats.size && typeof item.size === 'string') {
         imageGenerationStats.size = item.size
+      }
+      if (!imageGenerationStats.quality && typeof item.quality === 'string') {
+        imageGenerationStats.quality = item.quality
+      }
+      if (!imageGenerationStats.background && typeof item.background === 'string') {
+        imageGenerationStats.background = item.background
+      }
+      if (!imageGenerationStats.action && typeof item.action === 'string') {
+        imageGenerationStats.action = item.action
+      }
+    }
+    const recordImageGenerationResponseMeta = (response) => {
+      if (!response || typeof response !== 'object') {
+        return
+      }
+      if (!imageGenerationStats.toolModel && Array.isArray(response.tools)) {
+        const tool = response.tools.find((t) => t && t.type === 'image_generation')
+        if (tool && typeof tool.model === 'string') {
+          imageGenerationStats.toolModel = tool.model
+        }
+      }
+      const usage = response.tool_usage && response.tool_usage.image_gen
+      if (usage && typeof usage === 'object') {
+        const input = Number(usage.input_tokens)
+        const output = Number(usage.output_tokens)
+        const total = Number(usage.total_tokens)
+        if (Number.isFinite(input) && input > 0) {
+          imageGenerationStats.inputTokens = input
+        }
+        if (Number.isFinite(output) && output > 0) {
+          imageGenerationStats.outputTokens = output
+        }
+        if (Number.isFinite(total) && total > 0) {
+          imageGenerationStats.totalTokens = total
+        }
       }
     }
     const buildImageGenerationMeta = () =>
@@ -796,6 +842,7 @@ const handleResponses = async (req, res) => {
         if (Array.isArray(responseData.output)) {
           responseData.output.forEach(recordImageGenerationItem)
         }
+        recordImageGenerationResponseMeta(responseData)
 
         logger.debug(`📊 Non-stream response - Model: ${actualModel}, Usage:`, usageData)
 
@@ -821,7 +868,6 @@ const handleResponses = async (req, res) => {
               requestBody: req.body,
               stream: false,
               statusCode: upstream.status,
-              codexUsageSnapshot,
               imageGeneration: buildImageGenerationMeta()
             })
           )
@@ -879,10 +925,15 @@ const handleResponses = async (req, res) => {
         if (Array.isArray(eventData.response.output)) {
           eventData.response.output.forEach(recordImageGenerationItem)
         }
+        recordImageGenerationResponseMeta(eventData.response)
       }
 
       if (eventData.type === 'response.output_item.done') {
         recordImageGenerationItem(eventData.item)
+      }
+
+      if (eventData.type === 'response.created' && eventData.response) {
+        recordImageGenerationResponseMeta(eventData.response)
       }
 
       // 检查是否有限流错误
@@ -954,7 +1005,6 @@ const handleResponses = async (req, res) => {
               requestBody: req.body,
               stream: true,
               statusCode: res.statusCode,
-              codexUsageSnapshot,
               imageGeneration: buildImageGenerationMeta()
             })
           )
