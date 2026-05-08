@@ -391,8 +391,8 @@ function normalizeOpenAIResponsesImageOnlyModel(body = {}) {
     modified = true
   }
 
-  if (body.model !== 'gpt-5.4-mini') {
-    body.model = 'gpt-5.4-mini'
+  if (body.model !== 'gpt-5.4') {
+    body.model = 'gpt-5.4'
     modified = true
   }
   return modified

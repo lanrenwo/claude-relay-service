@@ -807,7 +807,7 @@ describe('openai responses payload toggles', () => {
     })
     axios.post.mockResolvedValue({
       status: 200,
-      data: { model: 'gpt-5.4-mini', usage: { total_tokens: 0 } },
+      data: { model: 'gpt-5.4', usage: { total_tokens: 0 } },
       headers: {}
     })
 
@@ -828,7 +828,7 @@ describe('openai responses payload toggles', () => {
     await openaiRoutes.handleResponses(req, createRes())
 
     const upstreamBody = axios.post.mock.calls[0][1]
-    expect(upstreamBody.model).toBe('gpt-5.4-mini')
+    expect(upstreamBody.model).toBe('gpt-5.4')
     expect(upstreamBody.input).toBe('draw a cat')
     expect(upstreamBody.prompt).toBeUndefined()
     expect(upstreamBody.tool_choice).toEqual({ type: 'image_generation' })
