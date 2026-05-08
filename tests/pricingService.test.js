@@ -78,6 +78,17 @@ describe('PricingService - Long Context Pricing', () => {
     jest.clearAllMocks()
   })
 
+  describe('OpenAI 图片模型兜底计费', () => {
+    it('gpt-image-* 未精确命中时回退到可用图片模型价格', () => {
+      const result = pricingService.getModelPricing('gpt-image-future')
+
+      expect(result).toBeTruthy()
+      expect(result).toBe(
+        pricingData['gpt-image-2'] || pricingData['gpt-image-1.5'] || pricingData['gpt-image-1']
+      )
+    })
+  })
+
   describe('Claude 模型平坦计费（无 200K+ 加价）', () => {
     it('199999 tokens - 应使用基础价格', () => {
       const usage = {

@@ -372,6 +372,16 @@ class PricingService {
       }
     }
 
+    if (typeof modelName === 'string' && modelName.toLowerCase().startsWith('gpt-image-')) {
+      for (const fallbackModel of ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1']) {
+        const fallbackPricing = this.pricingData[fallbackModel]
+        if (fallbackPricing) {
+          logger.info(`💰 Using ${fallbackModel} pricing as fallback for ${modelName}`)
+          return fallbackPricing
+        }
+      }
+    }
+
     // 对于Bedrock区域前缀模型（如 us.anthropic.claude-sonnet-4-20250514-v1:0），
     // 尝试去掉区域前缀进行匹配
     if (modelName.includes('.anthropic.') || modelName.includes('.claude')) {

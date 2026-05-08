@@ -682,8 +682,7 @@ describe('openai responses payload toggles', () => {
       body: {
         model: 'gpt-4.1',
         prompt_cache_key: 'text-with-image-service-key',
-        stream: false,
-        tools: [{ type: 'image_generation' }]
+        stream: false
       },
       apiKeyOverrides: {
         allowImageGeneration: true,
@@ -696,6 +695,51 @@ describe('openai responses payload toggles', () => {
     expect(redis.tryAcquireConcurrencySlot).not.toHaveBeenCalled()
     expect(axios.post).toHaveBeenCalled()
     expect(axios.post.mock.calls[0][1].tools).toBeUndefined()
+  })
+
+  test('reserves image concurrency slots for client-provided image_generation tools', async () => {
+    unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
+      accountId: 'openai-1',
+      accountType: 'openai'
+    })
+    openaiAccountService.getAccount.mockResolvedValue({
+      id: 'openai-1',
+      name: 'OpenAI Account',
+      accessToken: 'encrypted-token',
+      accountId: 'chatgpt-account-1'
+    })
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: { model: 'gpt-4.1', usage: { total_tokens: 0 } },
+      headers: {}
+    })
+
+    const req = createReq({
+      body: {
+        model: 'gpt-4.1',
+        prompt_cache_key: 'client-image-tool-key',
+        stream: false,
+        tools: [{ type: 'image_generation', format: 'webp', compression: 80 }]
+      },
+      apiKeyOverrides: {
+        allowImageGeneration: true,
+        enableOpenAIResponsesCodexAdaptation: false
+      }
+    })
+
+    await openaiRoutes.handleResponses(req, createRes())
+
+    expect(redis.tryAcquireConcurrencySlot).toHaveBeenCalledWith(
+      'image_generation:key_1',
+      expect.any(String),
+      1,
+      expect.any(Number)
+    )
+    expect(axios.post.mock.calls[0][1].tools).toContainEqual({
+      type: 'image_generation',
+      output_format: 'webp',
+      output_compression: 80
+    })
   })
 
   test('passes image generation options into the injected tool', async () => {
@@ -746,6 +790,52 @@ describe('openai responses payload toggles', () => {
       quality: 'high',
       size: '1024x1024',
       background: 'transparent',
+      output_format: 'webp'
+    })
+  })
+
+  test('normalizes gpt-image models into Responses image_generation tools', async () => {
+    unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
+      accountId: 'openai-1',
+      accountType: 'openai'
+    })
+    openaiAccountService.getAccount.mockResolvedValue({
+      id: 'openai-1',
+      name: 'OpenAI Account',
+      accessToken: 'encrypted-token',
+      accountId: 'chatgpt-account-1'
+    })
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: { model: 'gpt-5.4', usage: { total_tokens: 0 } },
+      headers: {}
+    })
+
+    const req = createReq({
+      body: {
+        model: 'gpt-image-1.5',
+        prompt: 'draw a cat',
+        stream: false,
+        size: '1024x1024',
+        format: 'webp'
+      },
+      apiKeyOverrides: {
+        allowImageGeneration: true,
+        enableOpenAIResponsesCodexAdaptation: false
+      }
+    })
+
+    await openaiRoutes.handleResponses(req, createRes())
+
+    const upstreamBody = axios.post.mock.calls[0][1]
+    expect(upstreamBody.model).toBe('gpt-5.4')
+    expect(upstreamBody.input).toBe('draw a cat')
+    expect(upstreamBody.prompt).toBeUndefined()
+    expect(upstreamBody.tool_choice).toEqual({ type: 'image_generation' })
+    expect(upstreamBody.tools).toContainEqual({
+      type: 'image_generation',
+      model: 'gpt-image-1.5',
+      size: '1024x1024',
       output_format: 'webp'
     })
   })

@@ -158,6 +158,21 @@ function hasImageGenerationTool(body = {}) {
   )
 }
 
+function findImageGenerationTool(body = {}) {
+  if (!body || typeof body !== 'object' || !Array.isArray(body.tools)) {
+    return null
+  }
+  return (
+    body.tools.find(
+      (tool) =>
+        tool &&
+        typeof tool === 'object' &&
+        typeof tool.type === 'string' &&
+        tool.type.trim().toLowerCase() === 'image_generation'
+    ) || null
+  )
+}
+
 function removeImageGenerationTool(body = {}) {
   if (!body || typeof body !== 'object' || !Array.isArray(body.tools)) {
     return false
@@ -179,13 +194,17 @@ function removeImageGenerationTool(body = {}) {
   return body.tools?.length !== originalLength
 }
 
+function isOpenAIImageGenerationModel(model = '') {
+  return typeof model === 'string' && model.trim().toLowerCase().startsWith('gpt-image-')
+}
+
 function isImageGenerationIntent(body = {}) {
   if (!body || typeof body !== 'object') {
     return false
   }
 
   const model = typeof body.model === 'string' ? body.model.trim().toLowerCase() : ''
-  if (model.startsWith('gpt-image-')) {
+  if (isOpenAIImageGenerationModel(model)) {
     return true
   }
 
@@ -220,8 +239,26 @@ const IMAGE_GENERATION_TOOL_FIELDS = [
   'output_format',
   'output_compression',
   'partial_images',
-  'moderation'
+  'moderation',
+  'style'
 ]
+
+function getImageGenerationFieldValue(source, field) {
+  if (!source || typeof source !== 'object') {
+    return undefined
+  }
+  const value = source[field]
+  if (value !== undefined && value !== null && value !== '') {
+    return value
+  }
+  if (field === 'output_format') {
+    return source.format
+  }
+  if (field === 'output_compression') {
+    return source.compression
+  }
+  return undefined
+}
 
 function buildImageGenerationTool(body = {}) {
   const tool = { type: 'image_generation', output_format: 'png' }
@@ -245,13 +282,48 @@ function buildImageGenerationTool(body = {}) {
       if (!allowModelFields && (field === 'model' || field === 'action')) {
         continue
       }
-      if (source[field] !== undefined && source[field] !== null && source[field] !== '') {
-        tool[field] = source[field]
+      const value = getImageGenerationFieldValue(source, field)
+      if (value !== undefined && value !== null && value !== '') {
+        tool[field] = value
       }
     }
   }
 
   return tool
+}
+
+function normalizeImageGenerationTools(body = {}) {
+  if (!body || typeof body !== 'object' || !Array.isArray(body.tools)) {
+    return false
+  }
+  let modified = false
+  for (const tool of body.tools) {
+    if (
+      !tool ||
+      typeof tool !== 'object' ||
+      typeof tool.type !== 'string' ||
+      tool.type.trim().toLowerCase() !== 'image_generation'
+    ) {
+      continue
+    }
+    if (tool.output_format === undefined && tool.format !== undefined) {
+      tool.output_format = tool.format
+      modified = true
+    }
+    if (tool.output_compression === undefined && tool.compression !== undefined) {
+      tool.output_compression = tool.compression
+      modified = true
+    }
+    if (tool.format !== undefined) {
+      delete tool.format
+      modified = true
+    }
+    if (tool.compression !== undefined) {
+      delete tool.compression
+      modified = true
+    }
+  }
+  return modified
 }
 
 function ensureImageGenerationTool(body = {}) {
@@ -268,6 +340,62 @@ function ensureImageGenerationTool(body = {}) {
   }
   body.tools.push(tool)
   return true
+}
+
+function normalizeOpenAIResponsesImageOnlyModel(body = {}) {
+  if (!body || typeof body !== 'object' || !isOpenAIImageGenerationModel(body.model)) {
+    return false
+  }
+
+  const imageModel = body.model.trim()
+  let tools = Array.isArray(body.tools) ? body.tools : []
+  let imageTool = findImageGenerationTool({ tools })
+  let modified = false
+
+  if (!imageTool) {
+    imageTool = { type: 'image_generation', model: imageModel }
+    tools = [...tools, imageTool]
+    body.tools = tools
+    modified = true
+  } else if (!imageTool.model) {
+    imageTool.model = imageModel
+    modified = true
+  }
+
+  for (const field of IMAGE_GENERATION_TOOL_FIELDS) {
+    if (field === 'action' || field === 'model') {
+      continue
+    }
+    const value = getImageGenerationFieldValue(body, field)
+    if (value !== undefined && value !== null && value !== '' && imageTool[field] === undefined) {
+      imageTool[field] = value
+      modified = true
+    }
+  }
+
+  for (const field of [...IMAGE_GENERATION_TOOL_FIELDS, 'format', 'compression']) {
+    if (field !== 'model' && field in body) {
+      delete body[field]
+      modified = true
+    }
+  }
+
+  if (typeof body.prompt === 'string' && body.prompt.trim() && body.input === undefined) {
+    body.input = body.prompt
+    delete body.prompt
+    modified = true
+  }
+
+  if (body.tool_choice === undefined) {
+    body.tool_choice = { type: 'image_generation' }
+    modified = true
+  }
+
+  if (body.model !== 'gpt-5.4') {
+    body.model = 'gpt-5.4'
+    modified = true
+  }
+  return modified
 }
 
 function summarizeUpstreamError(error) {
@@ -580,9 +708,13 @@ const handleResponses = async (req, res) => {
       }
     }
 
-    const imageGenerationIntent = isImageGenerationIntent(req.body)
+    const explicitImageGenerationIntent = isImageGenerationIntent(req.body)
+    const advertisedImageGenerationTool = hasImageGenerationTool(req.body)
+    const imageGenerationIntent =
+      explicitImageGenerationIntent ||
+      (apiKeyData.allowImageGeneration === true && advertisedImageGenerationTool)
 
-    if (imageGenerationIntent && apiKeyData.allowImageGeneration !== true) {
+    if (explicitImageGenerationIntent && apiKeyData.allowImageGeneration !== true) {
       logger.security(
         `🚫 API Key ${apiKeyData.id || 'unknown'} 未启用生图服务，拒绝 ${req.originalUrl}`
       )
@@ -597,6 +729,15 @@ const handleResponses = async (req, res) => {
 
     if (!imageGenerationIntent && removeImageGenerationTool(req.body)) {
       logger.info('🖼️ Removed non-explicit image_generation tool from text request')
+    }
+
+    if (apiKeyData.allowImageGeneration === true && imageGenerationIntent) {
+      if (normalizeOpenAIResponsesImageOnlyModel(req.body)) {
+        logger.info('🖼️ Normalized gpt-image-* /responses request to image_generation tool')
+      }
+      if (normalizeImageGenerationTools(req.body)) {
+        logger.info('🖼️ Normalized /responses image_generation tool payload')
+      }
     }
 
     // 从最终请求体中提取 service_tier，用于后续费用计算
