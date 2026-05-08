@@ -199,6 +199,15 @@ function isImageGenerationIntent(body = {}) {
       .some((value) => value.trim().toLowerCase() === 'image_generation')
   }
 
+  const hasImageGenerationOptions = (value) =>
+    value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0
+  if (
+    hasImageGenerationOptions(body.image_generation) ||
+    hasImageGenerationOptions(body.imageGeneration)
+  ) {
+    return true
+  }
+
   return false
 }
 
@@ -586,8 +595,8 @@ const handleResponses = async (req, res) => {
       })
     }
 
-    if (apiKeyData.allowImageGeneration !== true && removeImageGenerationTool(req.body)) {
-      logger.info('🖼️ Removed advertised image_generation tool for API key without image service')
+    if (!imageGenerationIntent && removeImageGenerationTool(req.body)) {
+      logger.info('🖼️ Removed non-explicit image_generation tool from text request')
     }
 
     // 从最终请求体中提取 service_tier，用于后续费用计算
@@ -622,10 +631,10 @@ const handleResponses = async (req, res) => {
       schedulerModel
     ))
 
-    // Responses can call image_generation automatically once the tool is available.
-    // Reserve the image slot before injection/relay so auto-called image generation
-    // cannot bypass concurrency limits.
-    if (apiKeyData.allowImageGeneration === true) {
+    // Only expose image_generation on explicit image requests. This keeps text
+    // requests out of the image concurrency pool while preventing auto-called
+    // image generation from bypassing the slot guard.
+    if (apiKeyData.allowImageGeneration === true && imageGenerationIntent) {
       const imageSlot = await acquireImageGenerationSlot(req, res, apiKeyData)
       if (!imageSlot.acquired) {
         logger.security(
@@ -649,7 +658,7 @@ const handleResponses = async (req, res) => {
       }
     }
 
-    if (apiKeyData.allowImageGeneration === true) {
+    if (apiKeyData.allowImageGeneration === true && imageGenerationIntent) {
       if (ensureImageGenerationTool(req.body)) {
         logger.info('🖼️ Injected /responses image_generation tool for Codex backend')
       }

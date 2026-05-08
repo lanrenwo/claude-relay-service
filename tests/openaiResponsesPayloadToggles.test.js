@@ -535,7 +535,8 @@ describe('openai responses payload toggles', () => {
     const req = createReq({
       body: {
         model: 'gpt-4.1',
-        prompt_cache_key: 'relay-image-key'
+        prompt_cache_key: 'relay-image-key',
+        tool_choice: 'image_generation'
       },
       apiKeyOverrides: {
         allowImageGeneration: true,
@@ -620,7 +621,7 @@ describe('openai responses payload toggles', () => {
     expect(axios.post.mock.calls[0][1].tools).toBeUndefined()
   })
 
-  test('injects the image_generation bridge only for API keys with image service enabled', async () => {
+  test('injects the image_generation bridge only for explicit image requests', async () => {
     unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
       accountId: 'openai-1',
       accountType: 'openai'
@@ -641,7 +642,8 @@ describe('openai responses payload toggles', () => {
       body: {
         model: 'gpt-4.1',
         prompt_cache_key: 'image-key',
-        stream: false
+        stream: false,
+        tool_choice: 'image_generation'
       },
       apiKeyOverrides: {
         allowImageGeneration: true,
@@ -659,7 +661,7 @@ describe('openai responses payload toggles', () => {
     expect(axios.post.mock.calls[0][1].instructions).toContain('<codex-image-generation-bridge>')
   })
 
-  test('reserves image concurrency slots for image-enabled keys before tool injection', async () => {
+  test('does not reserve image concurrency slots for text requests on image-enabled keys', async () => {
     unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
       accountId: 'openai-1',
       accountType: 'openai'
@@ -680,7 +682,8 @@ describe('openai responses payload toggles', () => {
       body: {
         model: 'gpt-4.1',
         prompt_cache_key: 'text-with-image-service-key',
-        stream: false
+        stream: false,
+        tools: [{ type: 'image_generation' }]
       },
       apiKeyOverrides: {
         allowImageGeneration: true,
@@ -690,17 +693,9 @@ describe('openai responses payload toggles', () => {
 
     await openaiRoutes.handleResponses(req, createRes())
 
-    expect(redis.tryAcquireConcurrencySlot).toHaveBeenCalledWith(
-      'image_generation:key_1',
-      expect.any(String),
-      1,
-      expect.any(Number)
-    )
+    expect(redis.tryAcquireConcurrencySlot).not.toHaveBeenCalled()
     expect(axios.post).toHaveBeenCalled()
-    expect(axios.post.mock.calls[0][1].tools).toContainEqual({
-      type: 'image_generation',
-      output_format: 'png'
-    })
+    expect(axios.post.mock.calls[0][1].tools).toBeUndefined()
   })
 
   test('passes image generation options into the injected tool', async () => {
@@ -740,6 +735,12 @@ describe('openai responses payload toggles', () => {
 
     await openaiRoutes.handleResponses(req, createRes())
 
+    expect(redis.tryAcquireConcurrencySlot).toHaveBeenCalledWith(
+      'image_generation:key_1',
+      expect.any(String),
+      1,
+      expect.any(Number)
+    )
     expect(axios.post.mock.calls[0][1].tools).toContainEqual({
       type: 'image_generation',
       quality: 'high',
@@ -855,7 +856,8 @@ describe('openai responses payload toggles', () => {
       body: {
         model: 'gpt-4.1',
         tools: [{ type: 'image_generation' }],
-        stream: false
+        stream: false,
+        tool_choice: 'image_generation'
       },
       apiKeyOverrides: {
         allowImageGeneration: true,
