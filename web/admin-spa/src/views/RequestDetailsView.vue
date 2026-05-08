@@ -533,9 +533,21 @@
                   </td>
                   <td class="table-cell text-blue-600 dark:text-blue-400">
                     {{ formatNumber(record.inputTokens) }}
+                    <div
+                      v-if="record.imageGeneration && record.imageGeneration.inputTokens"
+                      class="text-xs text-amber-500 dark:text-amber-400"
+                    >
+                      +{{ formatNumber(record.imageGeneration.inputTokens) }} 🖼️
+                    </div>
                   </td>
                   <td class="table-cell text-green-600 dark:text-green-400">
                     {{ formatNumber(record.outputTokens) }}
+                    <div
+                      v-if="record.imageGeneration && record.imageGeneration.outputTokens"
+                      class="text-xs text-amber-500 dark:text-amber-400"
+                    >
+                      +{{ formatNumber(record.imageGeneration.outputTokens) }} 🖼️
+                    </div>
                   </td>
                   <td class="table-cell text-cyan-600 dark:text-cyan-400">
                     {{ formatNumber(record.cacheReadTokens) }}
@@ -599,8 +611,22 @@
                       : ''
                   }}
                 </div>
-                <div>输入：{{ formatNumber(record.inputTokens) }}</div>
-                <div>输出：{{ formatNumber(record.outputTokens) }}</div>
+                <div>
+                  输入：{{ formatNumber(record.inputTokens)
+                  }}<span
+                    v-if="record.imageGeneration && record.imageGeneration.inputTokens"
+                    class="ml-1 text-amber-500 dark:text-amber-400"
+                    >+{{ formatNumber(record.imageGeneration.inputTokens) }} 🖼️</span
+                  >
+                </div>
+                <div>
+                  输出：{{ formatNumber(record.outputTokens)
+                  }}<span
+                    v-if="record.imageGeneration && record.imageGeneration.outputTokens"
+                    class="ml-1 text-amber-500 dark:text-amber-400"
+                    >+{{ formatNumber(record.imageGeneration.outputTokens) }} 🖼️</span
+                  >
+                </div>
                 <div>缓存读：{{ formatNumber(record.cacheReadTokens) }}</div>
                 <div>
                   缓存建：{{

@@ -207,11 +207,23 @@
                   </td>
                   <td class="whitespace-nowrap px-4 py-3 text-sm text-blue-600 dark:text-blue-400">
                     {{ formatNumber(record.inputTokens) }}
+                    <div
+                      v-if="record.imageGeneration && record.imageGeneration.inputTokens"
+                      class="text-xs text-amber-500 dark:text-amber-400"
+                    >
+                      +{{ formatNumber(record.imageGeneration.inputTokens) }} 🖼️
+                    </div>
                   </td>
                   <td
                     class="whitespace-nowrap px-4 py-3 text-sm text-green-600 dark:text-green-400"
                   >
                     {{ formatNumber(record.outputTokens) }}
+                    <div
+                      v-if="record.imageGeneration && record.imageGeneration.outputTokens"
+                      class="text-xs text-amber-500 dark:text-amber-400"
+                    >
+                      +{{ formatNumber(record.imageGeneration.outputTokens) }} 🖼️
+                    </div>
                   </td>
                   <td
                     class="whitespace-nowrap px-4 py-3 text-sm text-purple-600 dark:text-purple-400"
@@ -255,8 +267,22 @@
               <div class="mt-3 grid grid-cols-2 gap-2 text-sm text-gray-700 dark:text-gray-300">
                 <div>模型：{{ record.model }}</div>
                 <div>总 Token：{{ formatNumber(record.totalTokens) }}</div>
-                <div>输入：{{ formatNumber(record.inputTokens) }}</div>
-                <div>输出：{{ formatNumber(record.outputTokens) }}</div>
+                <div>
+                  输入：{{ formatNumber(record.inputTokens)
+                  }}<span
+                    v-if="record.imageGeneration && record.imageGeneration.inputTokens"
+                    class="ml-1 text-amber-500 dark:text-amber-400"
+                    >+{{ formatNumber(record.imageGeneration.inputTokens) }} 🖼️</span
+                  >
+                </div>
+                <div>
+                  输出：{{ formatNumber(record.outputTokens)
+                  }}<span
+                    v-if="record.imageGeneration && record.imageGeneration.outputTokens"
+                    class="ml-1 text-amber-500 dark:text-amber-400"
+                    >+{{ formatNumber(record.imageGeneration.outputTokens) }} 🖼️</span
+                  >
+                </div>
                 <div>
                   缓存创/读：{{ formatNumber(record.cacheCreateTokens) }} /
                   {{ formatNumber(record.cacheReadTokens) }}

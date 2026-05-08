@@ -1690,11 +1690,20 @@ class ApiKeyService {
     accountId = null,
     accountType = null,
     serviceTier = null,
-    requestMeta = null
+    requestMeta = null,
+    imageOutputTokens = 0,
+    imageInputTokens = 0,
+    imageModel = null
   ) {
     try {
       const finalizedRequestMeta = finalizeRequestDetailMeta(requestMeta)
-      const totalTokens = inputTokens + outputTokens + cacheCreateTokens + cacheReadTokens
+      const totalTokens =
+        inputTokens +
+        outputTokens +
+        imageInputTokens +
+        imageOutputTokens +
+        cacheCreateTokens +
+        cacheReadTokens
 
       // 计算费用
       const CostCalculator = require('../utils/costCalculator')
@@ -1709,6 +1718,20 @@ class ApiKeyService {
         serviceTier
       )
 
+      // 计算图片 token 费用（独立费率，对齐 sub2api 实现）
+      const pricingService = require('./pricingService')
+      let imageCost = 0
+      if ((imageOutputTokens > 0 || imageInputTokens > 0) && imageModel) {
+        const imgPricing = pricingService.getModelPricing(imageModel)
+        if (imgPricing) {
+          const imgOutPrice =
+            imgPricing.output_cost_per_image_token || imgPricing.output_cost_per_token || 0
+          const imgInPrice =
+            imgPricing.input_cost_per_image_token || imgPricing.input_cost_per_token || 0
+          imageCost = imageOutputTokens * imgOutPrice + imageInputTokens * imgInPrice
+        }
+      }
+
       // 检查是否为 1M 上下文请求
       let isLongContextRequest = false
       if (model && model.includes('[1m]')) {
@@ -1717,19 +1740,19 @@ class ApiKeyService {
       }
 
       // 计算费用（应用服务倍率）
-      const realCost = costInfo.costs.total
+      const realCost = costInfo.costs.total + imageCost
       let ratedCost = realCost
       if (realCost > 0) {
         const service = serviceRatesService.getService(accountType, model)
         ratedCost = await this.calculateRatedCost(keyId, service, realCost)
       }
 
-      // 记录API Key级别的使用统计（包含费用）
+      // 记录API Key级别的使用统计（包含费用，图片 token 并入 input/output 汇总）
       await redis.incrementTokenUsage(
         keyId,
         totalTokens,
-        inputTokens,
-        outputTokens,
+        inputTokens + imageInputTokens,
+        outputTokens + imageOutputTokens,
         cacheCreateTokens,
         cacheReadTokens,
         model,
@@ -1774,8 +1797,8 @@ class ApiKeyService {
           await redis.incrementAccountUsage(
             accountId,
             totalTokens,
-            inputTokens,
-            outputTokens,
+            inputTokens + imageInputTokens,
+            outputTokens + imageOutputTokens,
             cacheCreateTokens,
             cacheReadTokens,
             0, // ephemeral5mTokens - recordUsage 不含详细缓存数据
@@ -1814,7 +1837,20 @@ class ApiKeyService {
         realCost: Number(realCost.toFixed(6)),
         costBreakdown: costInfo?.costs || undefined,
         realCostBreakdown: costInfo?.costs || undefined,
-        isLongContext: isLongContextRequest
+        isLongContext: isLongContextRequest,
+        imageGeneration:
+          imageOutputTokens > 0 || imageInputTokens > 0
+            ? {
+                count: finalizedRequestMeta?.imageGeneration?.count || 0,
+                inputTokens: imageInputTokens || null,
+                outputTokens: imageOutputTokens || null,
+                totalTokens: (imageInputTokens || 0) + (imageOutputTokens || 0) || null,
+                toolModel: imageModel || null,
+                format: finalizedRequestMeta?.imageGeneration?.format || null,
+                size: finalizedRequestMeta?.imageGeneration?.size || null,
+                quality: finalizedRequestMeta?.imageGeneration?.quality || null
+              }
+            : undefined
       }
 
       await redis.addUsageRecord(keyId, usageRecord)
@@ -1823,6 +1859,11 @@ class ApiKeyService {
       })
 
       const logParts = [`Model: ${model}`, `Input: ${inputTokens}`, `Output: ${outputTokens}`]
+      if (imageOutputTokens > 0 || imageInputTokens > 0) {
+        logParts.push(
+          `Image(${imageModel || 'unknown'}): in=${imageInputTokens} out=${imageOutputTokens}`
+        )
+      }
       if (cacheCreateTokens > 0) {
         logParts.push(`Cache Create: ${cacheCreateTokens}`)
       }

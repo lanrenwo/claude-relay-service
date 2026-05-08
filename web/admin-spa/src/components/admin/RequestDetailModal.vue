@@ -141,15 +141,25 @@
             <div class="space-y-2 text-sm">
               <div class="metric-row">
                 <span>输入</span>
-                <span class="font-semibold text-blue-600 dark:text-blue-400">{{
-                  formatNumber(detail.inputTokens)
-                }}</span>
+                <span class="font-semibold text-blue-600 dark:text-blue-400">
+                  {{ formatNumber(detail.inputTokens) }}
+                  <span
+                    v-if="detail.imageGeneration && detail.imageGeneration.inputTokens"
+                    class="ml-1 text-xs font-normal text-amber-500 dark:text-amber-400"
+                    >+{{ formatNumber(detail.imageGeneration.inputTokens) }} 🖼️</span
+                  >
+                </span>
               </div>
               <div class="metric-row">
                 <span>输出</span>
-                <span class="font-semibold text-green-600 dark:text-green-400">{{
-                  formatNumber(detail.outputTokens)
-                }}</span>
+                <span class="font-semibold text-green-600 dark:text-green-400">
+                  {{ formatNumber(detail.outputTokens) }}
+                  <span
+                    v-if="detail.imageGeneration && detail.imageGeneration.outputTokens"
+                    class="ml-1 text-xs font-normal text-amber-500 dark:text-amber-400"
+                    >+{{ formatNumber(detail.imageGeneration.outputTokens) }} 🖼️</span
+                  >
+                </span>
               </div>
               <div class="metric-row">
                 <span>缓存读取</span>

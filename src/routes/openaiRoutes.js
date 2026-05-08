@@ -955,6 +955,7 @@ const handleResponses = async (req, res) => {
       totalTokens: null,
       items: []
     }
+    const seenImageItemIds = new Set()
     const recordImageGenerationItem = (item) => {
       if (!item || typeof item !== 'object') {
         return
@@ -965,6 +966,14 @@ const handleResponses = async (req, res) => {
       const result = typeof item.result === 'string' ? item.result.trim() : ''
       if (!result) {
         return
+      }
+      // Deduplicate by item id to prevent double-counting across output_item.done and response.completed
+      const itemId = item.id
+      if (itemId) {
+        if (seenImageItemIds.has(itemId)) {
+          return
+        }
+        seenImageItemIds.add(itemId)
       }
       imageGenerationStats.count += 1
       const itemMeta = {}
@@ -1059,6 +1068,7 @@ const handleResponses = async (req, res) => {
           // 计算实际输入token（总输入减去缓存部分）
           const actualInputTokens = Math.max(0, totalInputTokens - cacheReadTokens)
 
+          const imgMeta = buildImageGenerationMeta()
           const nonStreamCosts = await apiKeyService.recordUsage(
             apiKeyData.id,
             actualInputTokens, // 传递实际输入（不含缓存）
@@ -1073,8 +1083,11 @@ const handleResponses = async (req, res) => {
               requestBody: req.body,
               stream: false,
               statusCode: upstream.status,
-              imageGeneration: buildImageGenerationMeta()
-            })
+              imageGeneration: imgMeta
+            }),
+            imgMeta?.outputTokens || 0,
+            imgMeta?.inputTokens || 0,
+            imgMeta?.toolModel || null
           )
 
           logger.info(
@@ -1196,6 +1209,7 @@ const handleResponses = async (req, res) => {
           // 使用响应中的真实 model，如果没有则使用请求中的 model，最后回退到默认值
           const modelToRecord = actualModel || upstreamRequestedModel || 'gpt-4'
 
+          const imgMeta = buildImageGenerationMeta()
           const streamCosts = await apiKeyService.recordUsage(
             apiKeyData.id,
             actualInputTokens, // 传递实际输入（不含缓存）
@@ -1210,8 +1224,11 @@ const handleResponses = async (req, res) => {
               requestBody: req.body,
               stream: true,
               statusCode: res.statusCode,
-              imageGeneration: buildImageGenerationMeta()
-            })
+              imageGeneration: imgMeta
+            }),
+            imgMeta?.outputTokens || 0,
+            imgMeta?.inputTokens || 0,
+            imgMeta?.toolModel || null
           )
 
           logger.info(
@@ -1260,8 +1277,48 @@ const handleResponses = async (req, res) => {
       res.end()
     })
 
-    upstream.data.on('error', (err) => {
+    upstream.data.on('error', async (err) => {
       logger.error('Upstream stream error:', err)
+
+      // Save whatever stats were collected before the abort
+      if (!usageReported && (usageData || imageGenerationStats.count > 0)) {
+        try {
+          const totalInputTokens = usageData?.input_tokens || 0
+          const outputTokens = usageData?.output_tokens || 0
+          const cacheReadTokens = usageData ? extractOpenAICacheReadTokens(usageData) : 0
+          const actualInputTokens = Math.max(0, totalInputTokens - cacheReadTokens)
+          const modelToRecord = actualModel || upstreamRequestedModel || 'gpt-4'
+
+          const imgMeta = buildImageGenerationMeta()
+          await apiKeyService.recordUsage(
+            apiKeyData.id,
+            actualInputTokens,
+            outputTokens,
+            0,
+            cacheReadTokens,
+            modelToRecord,
+            accountId,
+            'openai',
+            req._serviceTier,
+            createRequestDetailMeta(req, {
+              requestBody: req.body,
+              stream: true,
+              statusCode: res.statusCode || 200,
+              imageGeneration: imgMeta
+            }),
+            imgMeta?.outputTokens || 0,
+            imgMeta?.inputTokens || 0,
+            imgMeta?.toolModel || null
+          )
+          usageReported = true
+          logger.info(
+            `📊 Recorded OpenAI usage (stream aborted) - images: ${imageGenerationStats.count}, input: ${totalInputTokens}, output: ${outputTokens}`
+          )
+        } catch (recordErr) {
+          logger.error('Failed to record usage on stream abort:', recordErr)
+        }
+      }
+
       if (!res.headersSent) {
         res.status(502).json({ error: { message: 'Upstream stream error' } })
       } else {

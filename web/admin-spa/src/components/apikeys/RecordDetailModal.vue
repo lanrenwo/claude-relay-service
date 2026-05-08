@@ -65,12 +65,22 @@
               <span class="text-gray-500 dark:text-gray-400">输入 Token</span>
               <span class="font-semibold text-blue-600 dark:text-blue-400">
                 {{ formatNumber(record?.inputTokens) }}
+                <span
+                  v-if="record?.imageGeneration && record.imageGeneration.inputTokens"
+                  class="ml-1 text-xs font-normal text-amber-500 dark:text-amber-400"
+                  >+{{ formatNumber(record.imageGeneration.inputTokens) }} 🖼️</span
+                >
               </span>
             </li>
             <li class="flex items-center justify-between">
               <span class="text-gray-500 dark:text-gray-400">输出 Token</span>
               <span class="font-semibold text-green-600 dark:text-green-400">
                 {{ formatNumber(record?.outputTokens) }}
+                <span
+                  v-if="record?.imageGeneration && record.imageGeneration.outputTokens"
+                  class="ml-1 text-xs font-normal text-amber-500 dark:text-amber-400"
+                  >+{{ formatNumber(record.imageGeneration.outputTokens) }} 🖼️</span
+                >
               </span>
             </li>
             <li class="flex items-center justify-between">
