@@ -1209,6 +1209,10 @@ const handleResponses = async (req, res) => {
         recordImageGenerationItem(eventData.item)
       }
 
+      if (eventData.type === 'image_generation.completed') {
+        imgTracker.recordCompletedEvent(eventData)
+      }
+
       if (eventData.type === 'response.created' && eventData.response) {
         recordImageGenerationResponseMeta(eventData.response)
       }

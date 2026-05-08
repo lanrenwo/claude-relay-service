@@ -1,16 +1,18 @@
 'use strict'
 
+const crypto = require('crypto')
+
 /**
  * Factory that creates a per-request image-generation stats tracker.
  *
- * Returns { recordItem, recordResponseMeta, build }.
+ * Returns { recordItem, recordCompletedEvent, recordResponseMeta, build }.
  *
  * build(reqBody?) resolves toolModel via the full fallback chain:
  *   response.tools[].model
- *   → image_generation_call item.model
+ *   → image_generation_call / image_generation.completed item.model
  *   → reqBody.tools[image_generation].model
  *   → reqBody.image_generation.model / reqBody.imageGeneration.model
- *   → 'gpt-image-1'
+ *   → 'gpt-image-2'  (OpenAI current default when tool present but model omitted)
  */
 function createImageGenerationTracker() {
   const stats = {
@@ -28,21 +30,70 @@ function createImageGenerationTracker() {
   }
   const seenItemKeys = new Set()
 
+  /**
+   * Build a stable dedup key from an image item.
+   * Mirrors sub2api: outputFormat|result > item:id/call_id > SHA-256(result).
+   */
+  const buildDedupKey = (item, result) => {
+    if (result) {
+      const fmt = typeof item.output_format === 'string' ? item.output_format.trim() : ''
+      return `${fmt}|${crypto.createHash('sha256').update(result).digest('hex')}`
+    }
+    const id = (item.id || item.call_id || '').toString().trim()
+    return id ? `item:${id}` : ''
+  }
+
+  /**
+   * Returns true if this item represents a partial/in-progress image frame
+   * (e.g. when partial_images > 0 is requested).  Such items must not be counted.
+   */
+  const isPartialImageItem = (item) => {
+    if (typeof item.partial_image_index === 'number') {
+      return true
+    }
+    const t = typeof item.type === 'string' ? item.type : ''
+    if (t.includes('partial_image')) {
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Core recording logic. Accepts items of type:
+   *   - image_generation_call  (from response.output[] and response.output_item.done)
+   *   - image_generation.completed  (standalone SSE event type on some API versions)
+   *   - '' / undefined  (when called from a known-image event context)
+   */
   const recordItem = (item) => {
     if (!item || typeof item !== 'object') {
       return
     }
-    if (item.type !== 'image_generation_call') {
-      return
-    }
-    const result = typeof item.result === 'string' ? item.result.trim() : ''
-    if (!result) {
+
+    const type = typeof item.type === 'string' ? item.type : ''
+    if (type !== '' && type !== 'image_generation_call' && type !== 'image_generation.completed') {
       return
     }
 
-    // Dedup: id > call_id > result prefix (prevents double-count across
-    // output_item.done and response.completed when no id is present)
-    const dedupKey = item.id || item.call_id || `result:${result.slice(0, 64)}`
+    // Skip partial image delivery frames — they are not complete images
+    if (isPartialImageItem(item)) {
+      return
+    }
+
+    // Resolve result from result > b64_json > url (mirrors sub2api)
+    const result =
+      (typeof item.result === 'string' ? item.result.trim() : '') ||
+      (typeof item.b64_json === 'string' ? item.b64_json.trim() : '') ||
+      (typeof item.url === 'string' ? item.url.trim() : '')
+
+    // For typed items, a non-empty result is required
+    if (!result && type !== '') {
+      return
+    }
+
+    const dedupKey = buildDedupKey(item, result)
+    if (!dedupKey) {
+      return
+    }
     if (seenItemKeys.has(dedupKey)) {
       return
     }
@@ -83,13 +134,27 @@ function createImageGenerationTracker() {
     }
     if (typeof item.model === 'string') {
       itemMeta.model = item.model
-      // Capture model as toolModel fallback (lower priority than response.tools[].model)
       if (!stats.toolModel) {
         stats.toolModel = item.model
       }
     }
+    if (typeof item.revised_prompt === 'string' && item.revised_prompt.trim()) {
+      itemMeta.revisedPrompt = item.revised_prompt.trim()
+    }
 
     stats.items.push(itemMeta)
+  }
+
+  /**
+   * Handle an SSE event with type === 'image_generation.completed'.
+   * The image data may be in event.item, event.output, or the event root.
+   */
+  const recordCompletedEvent = (eventData) => {
+    if (!eventData || typeof eventData !== 'object') {
+      return
+    }
+    const candidate = eventData.item || eventData.output || eventData
+    recordItem(candidate)
   }
 
   const recordResponseMeta = (response) => {
@@ -156,15 +221,16 @@ function createImageGenerationTracker() {
       }
     }
 
-    // Ultimate fallback — matches the default tool injected by buildImageGenerationTool()
+    // Ultimate fallback: gpt-image-2 is the current OpenAI default when the
+    // image_generation tool is present but no model is explicitly specified.
     if (!toolModel) {
-      toolModel = 'gpt-image-1'
+      toolModel = 'gpt-image-2'
     }
 
     return { ...stats, toolModel }
   }
 
-  return { recordItem, recordResponseMeta, build }
+  return { recordItem, recordCompletedEvent, recordResponseMeta, build }
 }
 
 module.exports = { createImageGenerationTracker }

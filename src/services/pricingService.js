@@ -395,6 +395,16 @@ class PricingService {
       }
     }
 
+    // gpt-image-* 专用回退链（与 sub2api 保持一致）
+    if (modelName.toLowerCase().startsWith('gpt-image-')) {
+      for (const candidate of ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1']) {
+        if (this.pricingData[candidate]) {
+          logger.debug(`💰 Image model fallback: ${modelName} -> ${candidate}`)
+          return this.pricingData[candidate]
+        }
+      }
+    }
+
     // 尝试模糊匹配（处理版本号等变化）
     const normalizedModel = modelName.toLowerCase().replace(/[_-]/g, '')
 

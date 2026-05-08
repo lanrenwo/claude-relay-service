@@ -540,6 +540,10 @@ class OpenAIResponsesRelayService {
               imgTracker.recordItem(eventData.item)
             }
 
+            if (eventData.type === 'image_generation.completed') {
+              imgTracker.recordCompletedEvent(eventData)
+            }
+
             if (eventData.type === 'response.created' && eventData.response) {
               imgTracker.recordResponseMeta(eventData.response)
             }
