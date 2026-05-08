@@ -622,8 +622,10 @@ const handleResponses = async (req, res) => {
       schedulerModel
     ))
 
-    // 并发判定必须基于服务端注入工具前的显式生图意图，避免普通文本请求因注入工具而占用生图槽位。
-    if (apiKeyData.allowImageGeneration === true && imageGenerationIntent) {
+    // Responses can call image_generation automatically once the tool is available.
+    // Reserve the image slot before injection/relay so auto-called image generation
+    // cannot bypass concurrency limits.
+    if (apiKeyData.allowImageGeneration === true) {
       const imageSlot = await acquireImageGenerationSlot(req, res, apiKeyData)
       if (!imageSlot.acquired) {
         logger.security(

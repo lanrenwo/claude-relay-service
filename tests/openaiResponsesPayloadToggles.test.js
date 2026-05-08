@@ -659,7 +659,7 @@ describe('openai responses payload toggles', () => {
     expect(axios.post.mock.calls[0][1].instructions).toContain('<codex-image-generation-bridge>')
   })
 
-  test('does not consume image concurrency slots for text requests before tool injection', async () => {
+  test('reserves image concurrency slots for image-enabled keys before tool injection', async () => {
     unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
       accountId: 'openai-1',
       accountType: 'openai'
@@ -690,7 +690,12 @@ describe('openai responses payload toggles', () => {
 
     await openaiRoutes.handleResponses(req, createRes())
 
-    expect(redis.tryAcquireConcurrencySlot).not.toHaveBeenCalled()
+    expect(redis.tryAcquireConcurrencySlot).toHaveBeenCalledWith(
+      'image_generation:key_1',
+      expect.any(String),
+      1,
+      expect.any(Number)
+    )
     expect(axios.post).toHaveBeenCalled()
     expect(axios.post.mock.calls[0][1].tools).toContainEqual({
       type: 'image_generation',
