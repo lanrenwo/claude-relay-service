@@ -185,6 +185,23 @@ function createImageGenerationTracker() {
         stats.totalTokens = total
       }
     }
+
+    const responseUsage =
+      response.usage && typeof response.usage === 'object' ? response.usage : null
+    if (responseUsage) {
+      const inputImageTokens = Number(responseUsage.input_tokens_details?.image_tokens)
+      const outputImageTokens = Number(responseUsage.output_tokens_details?.image_tokens)
+
+      if (!stats.inputTokens && Number.isFinite(inputImageTokens) && inputImageTokens > 0) {
+        stats.inputTokens = inputImageTokens
+      }
+      if (!stats.outputTokens && Number.isFinite(outputImageTokens) && outputImageTokens > 0) {
+        stats.outputTokens = outputImageTokens
+      }
+      if (!stats.totalTokens && (stats.inputTokens || stats.outputTokens)) {
+        stats.totalTokens = (stats.inputTokens || 0) + (stats.outputTokens || 0)
+      }
+    }
   }
 
   /**

@@ -739,7 +739,6 @@ class OpenAIResponsesRelayService {
     }
 
     req.on('close', cleanup)
-    req.on('aborted', cleanup)
   }
 
   // 处理非流式响应
