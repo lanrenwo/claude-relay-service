@@ -13,6 +13,7 @@ const {
   createRequestDetailMeta,
   extractOpenAICacheReadTokens
 } = require('../../utils/requestDetailHelper')
+const { createImageGenerationTracker } = require('../../utils/imageGenerationParser')
 
 // lastUsedAt 更新节流（每账户 60 秒内最多更新一次，使用 LRU 防止内存泄漏）
 const lastUsedAtThrottle = new LRUCache(1000) // 最多缓存 1000 个账户
@@ -495,6 +496,8 @@ class OpenAIResponsesRelayService {
     let rateLimitResetsInSeconds = null
     let streamEnded = false
 
+    const imgTracker = createImageGenerationTracker()
+
     // 解析 SSE 事件以捕获 usage 数据和 model
     const parseSSEForUsage = (data) => {
       const lines = data.split('\n')
@@ -526,6 +529,19 @@ class OpenAIResponsesRelayService {
                   total_tokens: usageData.total_tokens
                 })
               }
+
+              if (Array.isArray(eventData.response.output)) {
+                eventData.response.output.forEach(imgTracker.recordItem)
+              }
+              imgTracker.recordResponseMeta(eventData.response)
+            }
+
+            if (eventData.type === 'response.output_item.done') {
+              imgTracker.recordItem(eventData.item)
+            }
+
+            if (eventData.type === 'response.created' && eventData.response) {
+              imgTracker.recordResponseMeta(eventData.response)
             }
 
             // 检查是否有限流错误
@@ -607,6 +623,7 @@ class OpenAIResponsesRelayService {
           const modelToRecord = actualModel || requestedModel || 'gpt-4'
 
           const serviceTier = req._serviceTier || null
+          const imgMeta = imgTracker.build(req.body)
           await apiKeyService.recordUsage(
             apiKeyData.id,
             actualInputTokens, // 传递实际输入（不含缓存）
@@ -620,8 +637,12 @@ class OpenAIResponsesRelayService {
             createRequestDetailMeta(req, {
               requestBody: req.body,
               stream: true,
-              statusCode: res.statusCode
-            })
+              statusCode: res.statusCode,
+              imageGeneration: imgMeta
+            }),
+            imgMeta?.outputTokens || 0,
+            imgMeta?.inputTokens || 0,
+            imgMeta?.toolModel || null
           )
 
           logger.info(
@@ -744,6 +765,16 @@ class OpenAIResponsesRelayService {
           usageData.total_tokens || totalInputTokens + outputTokens + cacheCreateTokens
 
         const serviceTier = req._serviceTier || null
+
+        // Parse image generation metadata from non-stream response body
+        const nonStreamImgTracker = createImageGenerationTracker()
+        const responseOutput = responseData?.output || responseData?.response?.output
+        if (Array.isArray(responseOutput)) {
+          responseOutput.forEach(nonStreamImgTracker.recordItem)
+        }
+        nonStreamImgTracker.recordResponseMeta(responseData?.response || responseData)
+        const imgMeta = nonStreamImgTracker.build(req?.body)
+
         await apiKeyService.recordUsage(
           apiKeyData.id,
           actualInputTokens, // 传递实际输入（不含缓存）
@@ -757,8 +788,12 @@ class OpenAIResponsesRelayService {
           createRequestDetailMeta(req, {
             requestBody: req?.body,
             stream: false,
-            statusCode: response.status
-          })
+            statusCode: response.status,
+            imageGeneration: imgMeta
+          }),
+          imgMeta?.outputTokens || 0,
+          imgMeta?.inputTokens || 0,
+          imgMeta?.toolModel || null
         )
 
         logger.info(

@@ -19,6 +19,7 @@ const {
   createRequestDetailMeta,
   extractOpenAICacheReadTokens
 } = require('../utils/requestDetailHelper')
+const { createImageGenerationTracker } = require('../utils/imageGenerationParser')
 const requestBodyRuleService = require('../services/requestBodyRuleService')
 
 // Codex CLI 系统提示词（非 Codex CLI 客户端请求时注入，统一端点也使用）
@@ -942,104 +943,10 @@ const handleResponses = async (req, res) => {
     let actualModel = null
     let usageReported = false
     let rateLimitDetected = false
-    const imageGenerationStats = {
-      count: 0,
-      format: null,
-      size: null,
-      quality: null,
-      background: null,
-      action: null,
-      toolModel: null,
-      inputTokens: null,
-      outputTokens: null,
-      totalTokens: null,
-      items: []
-    }
-    const seenImageItemIds = new Set()
-    const recordImageGenerationItem = (item) => {
-      if (!item || typeof item !== 'object') {
-        return
-      }
-      if (item.type !== 'image_generation_call') {
-        return
-      }
-      const result = typeof item.result === 'string' ? item.result.trim() : ''
-      if (!result) {
-        return
-      }
-      // Deduplicate by item id to prevent double-counting across output_item.done and response.completed
-      const itemId = item.id
-      if (itemId) {
-        if (seenImageItemIds.has(itemId)) {
-          return
-        }
-        seenImageItemIds.add(itemId)
-      }
-      imageGenerationStats.count += 1
-      const itemMeta = {}
-      if (!imageGenerationStats.format && typeof item.output_format === 'string') {
-        imageGenerationStats.format = item.output_format
-      }
-      if (typeof item.output_format === 'string') {
-        itemMeta.format = item.output_format
-      }
-      if (!imageGenerationStats.size && typeof item.size === 'string') {
-        imageGenerationStats.size = item.size
-      }
-      if (typeof item.size === 'string') {
-        itemMeta.size = item.size
-      }
-      if (!imageGenerationStats.quality && typeof item.quality === 'string') {
-        imageGenerationStats.quality = item.quality
-      }
-      if (typeof item.quality === 'string') {
-        itemMeta.quality = item.quality
-      }
-      if (!imageGenerationStats.background && typeof item.background === 'string') {
-        imageGenerationStats.background = item.background
-      }
-      if (typeof item.background === 'string') {
-        itemMeta.background = item.background
-      }
-      if (!imageGenerationStats.action && typeof item.action === 'string') {
-        imageGenerationStats.action = item.action
-      }
-      if (typeof item.action === 'string') {
-        itemMeta.action = item.action
-      }
-      if (typeof item.model === 'string') {
-        itemMeta.model = item.model
-      }
-      imageGenerationStats.items.push(itemMeta)
-    }
-    const recordImageGenerationResponseMeta = (response) => {
-      if (!response || typeof response !== 'object') {
-        return
-      }
-      if (!imageGenerationStats.toolModel && Array.isArray(response.tools)) {
-        const tool = response.tools.find((t) => t && t.type === 'image_generation')
-        if (tool && typeof tool.model === 'string') {
-          imageGenerationStats.toolModel = tool.model
-        }
-      }
-      const usage = response.tool_usage && response.tool_usage.image_gen
-      if (usage && typeof usage === 'object') {
-        const input = Number(usage.input_tokens)
-        const output = Number(usage.output_tokens)
-        const total = Number(usage.total_tokens)
-        if (Number.isFinite(input) && input > 0) {
-          imageGenerationStats.inputTokens = input
-        }
-        if (Number.isFinite(output) && output > 0) {
-          imageGenerationStats.outputTokens = output
-        }
-        if (Number.isFinite(total) && total > 0) {
-          imageGenerationStats.totalTokens = total
-        }
-      }
-    }
-    const buildImageGenerationMeta = () =>
-      imageGenerationStats.count > 0 ? { ...imageGenerationStats } : null
+    const imgTracker = createImageGenerationTracker()
+    const recordImageGenerationItem = imgTracker.recordItem
+    const recordImageGenerationResponseMeta = imgTracker.recordResponseMeta
+    const buildImageGenerationMeta = () => imgTracker.build(req.body)
     let rateLimitResetsInSeconds = null
 
     if (!isStream) {
@@ -1281,7 +1188,7 @@ const handleResponses = async (req, res) => {
       logger.error('Upstream stream error:', err)
 
       // Save whatever stats were collected before the abort
-      if (!usageReported && (usageData || imageGenerationStats.count > 0)) {
+      if (!usageReported && (usageData || imgTracker.build(req.body) !== null)) {
         try {
           const totalInputTokens = usageData?.input_tokens || 0
           const outputTokens = usageData?.output_tokens || 0
@@ -1312,7 +1219,7 @@ const handleResponses = async (req, res) => {
           )
           usageReported = true
           logger.info(
-            `📊 Recorded OpenAI usage (stream aborted) - images: ${imageGenerationStats.count}, input: ${totalInputTokens}, output: ${outputTokens}`
+            `📊 Recorded OpenAI usage (stream aborted) - images: ${imgMeta?.count ?? 0}, input: ${totalInputTokens}, output: ${outputTokens}`
           )
         } catch (recordErr) {
           logger.error('Failed to record usage on stream abort:', recordErr)

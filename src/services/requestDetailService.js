@@ -526,6 +526,8 @@ function createSummaryAccumulator() {
     outputTokens: 0,
     cacheReadTokens: 0,
     cacheCreateTokens: 0,
+    imageInputTokens: 0,
+    imageOutputTokens: 0,
     totalCost: 0,
     totalDurationMs: 0,
     cacheHitNumerator: 0,
@@ -544,6 +546,8 @@ function updateSummaryAccumulator(accumulator, record) {
   if (!cacheMetrics.cacheCreateNotApplicable) {
     accumulator.cacheCreateTokens += normalizeNumber(record.cacheCreateTokens)
   }
+  accumulator.imageInputTokens += normalizeNumber(record.imageGeneration?.inputTokens)
+  accumulator.imageOutputTokens += normalizeNumber(record.imageGeneration?.outputTokens)
   accumulator.totalCost += normalizeNumber(record.cost)
   accumulator.totalDurationMs += normalizeNumber(record.durationMs)
   accumulator.cacheHitNumerator += cacheMetrics.numerator
@@ -560,6 +564,8 @@ function finalizeSummary(accumulator) {
     outputTokens: accumulator.outputTokens,
     cacheReadTokens: accumulator.cacheReadTokens,
     cacheCreateTokens: accumulator.cacheCreateTokens,
+    imageInputTokens: accumulator.imageInputTokens || 0,
+    imageOutputTokens: accumulator.imageOutputTokens || 0,
     totalCost: Number(accumulator.totalCost.toFixed(6)),
     avgDurationMs:
       accumulator.totalRequests > 0

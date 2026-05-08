@@ -1835,8 +1835,12 @@ class ApiKeyService {
         totalTokens,
         cost: Number(ratedCost.toFixed(6)),
         realCost: Number(realCost.toFixed(6)),
-        costBreakdown: costInfo?.costs || undefined,
-        realCostBreakdown: costInfo?.costs || undefined,
+        costBreakdown: costInfo?.costs
+          ? { ...costInfo.costs, imageTotal: Number(imageCost.toFixed(8)) }
+          : undefined,
+        realCostBreakdown: costInfo?.costs
+          ? { ...costInfo.costs, imageTotal: Number(imageCost.toFixed(8)) }
+          : undefined,
         isLongContext: isLongContextRequest,
         imageGeneration:
           imageOutputTokens > 0 || imageInputTokens > 0
