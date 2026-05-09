@@ -731,9 +731,47 @@ class OpenAIResponsesRelayService {
       }
     })
 
-    // 处理客户端断开连接
-    const cleanup = () => {
+    // 处理客户端断开连接：先记录已采集的用量再清理流
+    let usageRecordedOnDisconnect = false
+    const cleanup = async () => {
       streamEnded = true
+      if (!usageRecordedOnDisconnect && (usageData || imgTracker.build(req.body) !== null)) {
+        usageRecordedOnDisconnect = true
+        try {
+          const totalInputTokens = usageData?.input_tokens || usageData?.prompt_tokens || 0
+          const outputTokens = usageData?.output_tokens || usageData?.completion_tokens || 0
+          const cacheReadTokens = usageData ? extractOpenAICacheReadTokens(usageData) : 0
+          const cacheCreateTokens = usageData ? extractCacheCreationTokens(usageData) : 0
+          const actualInputTokens = Math.max(0, totalInputTokens - cacheReadTokens)
+          const modelToRecord = actualModel || requestedModel || 'gpt-4'
+          const imgMeta = imgTracker.build(req.body)
+          await apiKeyService.recordUsage(
+            apiKeyData.id,
+            actualInputTokens,
+            outputTokens,
+            cacheCreateTokens,
+            cacheReadTokens,
+            modelToRecord,
+            account.id,
+            'openai-responses',
+            req._serviceTier || null,
+            createRequestDetailMeta(req, {
+              requestBody: req.body,
+              stream: true,
+              statusCode: res.statusCode || 200,
+              imageGeneration: imgMeta
+            }),
+            imgMeta?.outputTokens || 0,
+            imgMeta?.inputTokens || 0,
+            imgMeta?.toolModel || null
+          )
+          logger.info(
+            `📊 Recorded openai-responses usage (client disconnected) - images: ${imgMeta?.count ?? 0}, input: ${totalInputTokens}, output: ${outputTokens}`
+          )
+        } catch (recordErr) {
+          logger.error('Failed to record usage on client disconnect:', recordErr)
+        }
+      }
       try {
         response.data?.unpipe?.(res)
         response.data?.destroy?.()
