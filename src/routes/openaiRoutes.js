@@ -1317,8 +1317,44 @@ const handleResponses = async (req, res) => {
       }
     })
 
-    // 客户端断开时清理上游流
-    const cleanup = () => {
+    // 客户端断开时：先记录已采集的用量（不等上游事件，防止漏记），再清理上游流
+    const cleanup = async () => {
+      if (!usageReported && (usageData || imgTracker.build(req.body) !== null)) {
+        try {
+          const totalInputTokens = usageData?.input_tokens || 0
+          const outputTokens = usageData?.output_tokens || 0
+          const cacheReadTokens = usageData ? extractOpenAICacheReadTokens(usageData) : 0
+          const actualInputTokens = Math.max(0, totalInputTokens - cacheReadTokens)
+          const modelToRecord = actualModel || upstreamRequestedModel || 'gpt-4'
+          const imgMeta = buildImageGenerationMeta()
+          await apiKeyService.recordUsage(
+            apiKeyData.id,
+            actualInputTokens,
+            outputTokens,
+            0,
+            cacheReadTokens,
+            modelToRecord,
+            accountId,
+            'openai',
+            req._serviceTier,
+            createRequestDetailMeta(req, {
+              requestBody: req.body,
+              stream: true,
+              statusCode: res.statusCode || 200,
+              imageGeneration: imgMeta
+            }),
+            imgMeta?.outputTokens || 0,
+            imgMeta?.inputTokens || 0,
+            imgMeta?.toolModel || null
+          )
+          usageReported = true
+          logger.info(
+            `📊 Recorded OpenAI usage (client disconnected) - images: ${imgMeta?.count ?? 0}, input: ${totalInputTokens}, output: ${outputTokens}`
+          )
+        } catch (recordErr) {
+          logger.error('Failed to record usage on client disconnect:', recordErr)
+        }
+      }
       try {
         upstream.data?.unpipe?.(res)
         upstream.data?.destroy?.()
