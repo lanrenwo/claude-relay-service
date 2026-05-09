@@ -4,6 +4,7 @@ const {
   resolveRequestDetailReasoning,
   createRequestDetailMeta,
   finalizeRequestDetailMeta,
+  getRequestClientIp,
   extractOpenAICacheReadTokens,
   isOpenAIRelatedEndpoint,
   calculateCacheHitRate
@@ -171,6 +172,8 @@ describe('requestDetailHelper', () => {
       originalUrl: '/v1/messages?stream=true',
       method: 'POST',
       requestStartedAt: now - 250,
+      firstTokenLatencyMs: 123,
+      ip: '::ffff:192.168.3.146',
       body: { model: 'claude-sonnet-4-6', stream: true },
       res: { statusCode: 201 }
     }
@@ -183,6 +186,8 @@ describe('requestDetailHelper', () => {
     expect(meta.stream).toBe(true)
     expect(meta.statusCode).toBe(201)
     expect(meta.durationMs).toBeGreaterThanOrEqual(200)
+    expect(meta.firstTokenLatencyMs).toBe(123)
+    expect(meta.clientIp).toBe('192.168.3.146')
     expect(meta.requestBody).toEqual(req.body)
   })
 
@@ -196,6 +201,20 @@ describe('requestDetailHelper', () => {
     })
 
     expect(meta.durationMs).toBe(500)
+  })
+
+  test('getRequestClientIp normalizes proxy and IPv4-mapped addresses', () => {
+    expect(
+      getRequestClientIp({
+        headers: { 'x-forwarded-for': '192.168.3.146, 10.0.0.1' }
+      })
+    ).toBe('192.168.3.146')
+
+    expect(
+      getRequestClientIp({
+        ip: '::ffff:192.168.3.146'
+      })
+    ).toBe('192.168.3.146')
   })
 
   test('identifies openai-style request detail endpoints', () => {

@@ -1774,7 +1774,16 @@ const requestLogger = (req, res, next) => {
   res.setHeader('X-Request-ID', requestId)
 
   // 获取客户端信息
-  const clientIP = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown'
+  const clientIP =
+    (typeof req.headers['x-forwarded-for'] === 'string'
+      ? req.headers['x-forwarded-for'].split(',')[0].trim()
+      : null) ||
+    req.headers['x-real-ip'] ||
+    req.ip ||
+    req.connection?.remoteAddress ||
+    req.socket?.remoteAddress ||
+    'unknown'
+  req.clientIp = clientIP
   const userAgent = req.get('User-Agent') || 'unknown'
   const referer = req.get('Referer') || 'none'
 

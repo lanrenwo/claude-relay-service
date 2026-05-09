@@ -78,6 +78,10 @@ function normalizeNumber(value, digits = null) {
   return Number(num.toFixed(digits))
 }
 
+function normalizeOptionalString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
 function formatDayKey(date) {
   return date.toISOString().slice(0, 10)
 }
@@ -648,6 +652,12 @@ class RequestDetailService {
     const requestBodySource = detail.requestBodySnapshot ?? detail.requestBody
     const timestamp = toIsoString(detail.timestamp) || new Date().toISOString()
     const durationMs = normalizeNumber(detail.durationMs)
+    const firstTokenLatencyMs =
+      detail.firstTokenLatencyMs === undefined ||
+      detail.firstTokenLatencyMs === null ||
+      detail.firstTokenLatencyMs === ''
+        ? null
+        : normalizeNumber(detail.firstTokenLatencyMs)
     const inputTokens = normalizeNumber(detail.inputTokens)
     const outputTokens = normalizeNumber(detail.outputTokens)
     const cacheReadTokens = normalizeNumber(detail.cacheReadTokens)
@@ -681,6 +691,8 @@ class RequestDetailService {
       costBreakdown: detail.costBreakdown || null,
       realCostBreakdown: detail.realCostBreakdown || null,
       durationMs,
+      firstTokenLatencyMs,
+      clientIp: normalizeOptionalString(detail.clientIp),
       isLongContextRequest: detail.isLongContextRequest === true,
       reasoningDisplay: detail.reasoningDisplay || reasoningInfo.reasoningDisplay || null,
       reasoningSource: detail.reasoningSource || reasoningInfo.reasoningSource || null,

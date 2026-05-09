@@ -22,6 +22,45 @@ function toFiniteNumber(value) {
   return num
 }
 
+function normalizeClientIp(value) {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const first = trimmed.split(',')[0].trim()
+  if (!first) {
+    return null
+  }
+
+  return first.startsWith('::ffff:') ? first.slice(7) : first
+}
+
+function getRequestClientIp(req = null, override = undefined) {
+  const candidates = [
+    override,
+    req?.headers?.['x-forwarded-for'],
+    req?.headers?.['x-real-ip'],
+    req?.clientIp,
+    req?.ip,
+    req?.connection?.remoteAddress,
+    req?.socket?.remoteAddress
+  ]
+
+  for (const candidate of candidates) {
+    const normalized = normalizeClientIp(candidate)
+    if (normalized) {
+      return normalized
+    }
+  }
+
+  return null
+}
+
 function maskSensitiveValue(value) {
   if (value === null || value === undefined) {
     return value
@@ -570,6 +609,8 @@ function createRequestDetailMeta(req, overrides = {}) {
   const reqStartedAt = toFiniteNumber(req?.requestStartedAt)
   const effectiveStart = requestStartedAt ?? reqStartedAt
   const requestBody = overrides.requestBody !== undefined ? overrides.requestBody : req?.body
+  const firstTokenLatencyMs =
+    toFiniteNumber(overrides.firstTokenLatencyMs) ?? toFiniteNumber(req?.firstTokenLatencyMs)
 
   return {
     requestId: overrides.requestId || req?.requestId || null,
@@ -581,7 +622,9 @@ function createRequestDetailMeta(req, overrides = {}) {
         ? overrides.stream
         : Boolean(requestBody && requestBody.stream === true),
     durationMs: durationMs ?? (effectiveStart ? Math.max(0, nowMs - effectiveStart) : null),
+    firstTokenLatencyMs,
     requestStartedAt: effectiveStart ? new Date(effectiveStart).toISOString() : null,
+    clientIp: getRequestClientIp(req, overrides.clientIp),
     requestBody,
     imageGeneration: overrides.imageGeneration || null
   }
@@ -600,7 +643,9 @@ function finalizeRequestDetailMeta(requestMeta = null) {
 
   return {
     ...requestMeta,
-    durationMs
+    durationMs,
+    firstTokenLatencyMs: toFiniteNumber(requestMeta.firstTokenLatencyMs),
+    clientIp: normalizeClientIp(requestMeta.clientIp)
   }
 }
 
@@ -700,6 +745,7 @@ module.exports = {
   resolveRequestDetailReasoning,
   createRequestDetailMeta,
   finalizeRequestDetailMeta,
+  getRequestClientIp,
   extractOpenAICacheReadTokens,
   isOpenAIRelatedEndpoint,
   getRequestDetailCacheMetrics,

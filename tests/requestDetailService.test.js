@@ -153,6 +153,8 @@ describe('requestDetailService', () => {
           totalTokens: 250,
           cost: 0.5,
           durationMs: 1200,
+          firstTokenLatencyMs: 450,
+          clientIp: '192.168.3.146',
           requestBodySnapshot: { model: 'gpt-5.4' }
         })
       ])
@@ -174,6 +176,8 @@ describe('requestDetailService', () => {
     expect(result.records[0].requestBodySnapshot).toBeUndefined()
     expect(result.records[0].isOpenAIRelated).toBe(true)
     expect(result.records[0].cacheCreateNotApplicable).toBe(true)
+    expect(result.records[0].firstTokenLatencyMs).toBe(450)
+    expect(result.records[0].clientIp).toBe('192.168.3.146')
     expect(result.retentionHours).toBe(6)
     expect(result.summary.totalRequests).toBe(1)
     expect(result.summary.cacheCreateTokens).toBe(0)

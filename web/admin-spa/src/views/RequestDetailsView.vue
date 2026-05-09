@@ -386,6 +386,11 @@
                     统计时间
                   </th>
                   <th
+                    class="min-w-[140px] px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300"
+                  >
+                    IP
+                  </th>
+                  <th
                     class="min-w-[170px] px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300"
                   >
                     API Key
@@ -448,6 +453,11 @@
                   <th
                     class="min-w-[100px] px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300"
                   >
+                    首 TOKEN
+                  </th>
+                  <th
+                    class="min-w-[100px] px-3 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300"
+                  >
                     耗时
                   </th>
                   <th
@@ -471,6 +481,7 @@
                       {{ record.requestId }}
                     </div>
                   </td>
+                  <td class="table-cell">{{ record.clientIp || '-' }}</td>
                   <td class="table-cell">
                     <div class="font-semibold">
                       {{ record.apiKeyName || record.apiKeyId || '-' }}
@@ -561,6 +572,7 @@
                   <td class="table-cell text-amber-600 dark:text-amber-400">
                     {{ formatCost(record.cost) }}
                   </td>
+                  <td class="table-cell">{{ formatDuration(record.firstTokenLatencyMs) }}</td>
                   <td class="table-cell">{{ formatDuration(record.durationMs) }}</td>
                   <td class="table-cell text-right">
                     <button
@@ -603,6 +615,7 @@
               <div class="mt-3 grid grid-cols-2 gap-2 text-sm text-gray-700 dark:text-gray-300">
                 <div>API Key：{{ record.apiKeyName || '-' }}</div>
                 <div>账户：{{ record.accountName || '-' }}</div>
+                <div>IP：{{ record.clientIp || '-' }}</div>
                 <div>推理：{{ formatReasoning(record.reasoningDisplay) }}</div>
                 <div v-if="record.imageGeneration && record.imageGeneration.count">
                   图像：🖼️ {{ record.imageGeneration.count }} 张{{
@@ -634,6 +647,7 @@
                   }}
                 </div>
                 <div>命中率：{{ formatPercent(record.cacheHitRate) }}</div>
+                <div>首 TOKEN：{{ formatDuration(record.firstTokenLatencyMs) }}</div>
                 <div>耗时：{{ formatDuration(record.durationMs) }}</div>
                 <div class="text-amber-600 dark:text-amber-400">
                   费用：{{ formatCost(record.cost) }}
@@ -1017,6 +1031,7 @@ const exportCsv = async () => {
     const headers = [
       '统计时间',
       'Request ID',
+      'IP',
       'API Key',
       '使用账户',
       '消费类型',
@@ -1032,7 +1047,8 @@ const exportCsv = async () => {
       '缓存创建',
       '缓存命中率',
       '费用',
-      '耗时(ms)'
+      '首TOKEN(s)',
+      '耗时(s)'
     ]
 
     const rows = [headers.join(',')]
@@ -1040,6 +1056,7 @@ const exportCsv = async () => {
       const row = [
         formatDate(record.timestamp),
         record.requestId || '',
+        record.clientIp || '',
         record.apiKeyName || record.apiKeyId || '',
         record.accountName || record.accountId || '',
         record.accountTypeName || record.accountType || '',
@@ -1055,7 +1072,8 @@ const exportCsv = async () => {
         formatCacheCreate(record.cacheCreateTokens, record.cacheCreateNotApplicable),
         formatPercent(record.cacheHitRate),
         formatCost(record.cost),
-        record.durationMs || 0
+        formatDuration(record.firstTokenLatencyMs),
+        formatDuration(record.durationMs)
       ]
       rows.push(row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
     })
@@ -1100,7 +1118,12 @@ const formatRetentionHours = (value) => {
 
   return `保留 ${hours} 小时`
 }
-const formatDuration = (value) => `${Number(value || 0)}ms`
+const formatDuration = (value) => {
+  if (value === null || value === undefined || value === '') return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return `${(num / 1000).toFixed(2)}s`
+}
 const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`
 const formatReasoning = (value) => value || '-'
 

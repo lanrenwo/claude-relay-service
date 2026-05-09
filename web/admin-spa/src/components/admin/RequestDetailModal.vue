@@ -44,11 +44,16 @@
       </div>
 
       <template v-else-if="detail">
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           <div class="info-card">
             <p class="info-label">接口</p>
             <p class="info-value">{{ detail.endpoint || '-' }}</p>
             <p class="info-sub">{{ detail.method || 'POST' }}</p>
+          </div>
+          <div class="info-card">
+            <p class="info-label">首 TOKEN</p>
+            <p class="info-value">{{ formatDuration(detail.firstTokenLatencyMs) }}</p>
+            <p class="info-sub">TTFT</p>
           </div>
           <div class="info-card">
             <p class="info-label">耗时</p>
@@ -80,6 +85,10 @@
               <div>
                 <p class="field-label">时间</p>
                 <p class="field-value">{{ formatDate(detail.timestamp) }}</p>
+              </div>
+              <div>
+                <p class="field-label">IP</p>
+                <p class="field-value">{{ detail.clientIp || '-' }}</p>
               </div>
               <div>
                 <p class="field-label">API Key</p>
@@ -485,7 +494,12 @@ const copySnapshot = async () => {
 }
 
 const formatDate = (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-')
-const formatDuration = (value) => `${Number(value || 0)}ms`
+const formatDuration = (value) => {
+  if (value === null || value === undefined || value === '') return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return `${(num / 1000).toFixed(2)}s`
+}
 const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`
 const formatCacheCreate = (value, notApplicable = false) =>
   notApplicable ? '-' : formatNumber(value)

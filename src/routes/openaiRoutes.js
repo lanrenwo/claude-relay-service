@@ -1247,6 +1247,10 @@ const handleResponses = async (req, res) => {
 
     upstream.data.on('data', (chunk) => {
       try {
+        if (!req.firstTokenLatencyMs && req.requestStartedAt) {
+          req.firstTokenLatencyMs = Math.max(0, Date.now() - req.requestStartedAt)
+        }
+
         // 转发数据给客户端
         if (!res.destroyed) {
           res.write(chunk)

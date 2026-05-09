@@ -575,6 +575,10 @@ class OpenAIResponsesRelayService {
     // 监听数据流
     response.data.on('data', (chunk) => {
       try {
+        if (!req.firstTokenLatencyMs && req.requestStartedAt) {
+          req.firstTokenLatencyMs = Math.max(0, Date.now() - req.requestStartedAt)
+        }
+
         const chunkStr = chunk.toString()
 
         // 转发数据给客户端
