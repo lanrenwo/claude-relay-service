@@ -724,11 +724,13 @@ const handleResponses = async (req, res) => {
     }
 
     const explicitImageGenerationIntent = isImageGenerationIntent(req.body)
-    // Only explicit intent (gpt-image-* model / tool_choice / image_generation options)
-    // qualifies as a real image request and occupies the image concurrency slot.
-    // A request that merely advertises the tool without explicit intent gets the tool
-    // stripped at line 730 so the model cannot auto-call it unexpectedly.
-    const imageGenerationIntent = explicitImageGenerationIntent
+    const advertisedImageGenerationTool = hasImageGenerationTool(req.body)
+    // imageGenerationIntent: controls whether the tool is kept and bridge instructions
+    // are injected. Codex CLI advertises image_generation in tools[] without an explicit
+    // tool_choice; the model decides when to call it, so we must keep the tool.
+    const imageGenerationIntent =
+      explicitImageGenerationIntent ||
+      (apiKeyData.allowImageGeneration === true && advertisedImageGenerationTool)
 
     if (explicitImageGenerationIntent && apiKeyData.allowImageGeneration !== true) {
       logger.security(
@@ -788,10 +790,11 @@ const handleResponses = async (req, res) => {
       schedulerModel
     ))
 
-    // Only expose image_generation on explicit image requests. This keeps text
-    // requests out of the image concurrency pool while preventing auto-called
-    // image generation from bypassing the slot guard.
-    if (apiKeyData.allowImageGeneration === true && imageGenerationIntent) {
+    // Pre-acquire the image slot only when there is explicit intent (gpt-image-* model,
+    // tool_choice, or image_generation options). Codex CLI requests that merely advertise
+    // the tool in tools[] are not pre-slotted — they hold no slot until the model
+    // actually calls the tool, which is fine because such requests complete quickly.
+    if (apiKeyData.allowImageGeneration === true && explicitImageGenerationIntent) {
       const imageSlot = await acquireImageGenerationSlot(req, res, apiKeyData)
       if (!imageSlot.acquired) {
         logger.security(

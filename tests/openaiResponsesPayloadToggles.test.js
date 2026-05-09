@@ -697,10 +697,11 @@ describe('openai responses payload toggles', () => {
     expect(axios.post.mock.calls[0][1].tools).toBeUndefined()
   })
 
-  test('strips advertised image_generation tool when there is no explicit image intent', async () => {
-    // A request that merely advertises the image_generation tool without explicit
-    // intent (no tool_choice, no gpt-image-* model, no image_generation options)
-    // must NOT acquire an image concurrency slot and must have the tool removed.
+  test('preserves advertised image_generation tool without pre-acquiring the concurrency slot', async () => {
+    // Codex CLI advertises image_generation in tools[] without an explicit tool_choice.
+    // The tool must be kept so the model can call it, but the image concurrency slot
+    // must NOT be pre-acquired (slot is only reserved for explicit image intents such
+    // as gpt-image-* model, tool_choice, or image_generation options).
     unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
       accountId: 'openai-1',
       accountType: 'openai'
@@ -732,12 +733,12 @@ describe('openai responses payload toggles', () => {
 
     await openaiRoutes.handleResponses(req, createRes())
 
-    // No image slot should be acquired for an advertise-only tool
+    // No image slot pre-acquired — explicit intent required for slot reservation
     expect(redis.tryAcquireConcurrencySlot).not.toHaveBeenCalled()
-    // The tool must be stripped from the forwarded request
+    // Tool must be forwarded so the model can call it when needed
     const forwardedBody = axios.post.mock.calls[0][1]
     const hasImageTool = (forwardedBody.tools || []).some((t) => t?.type === 'image_generation')
-    expect(hasImageTool).toBe(false)
+    expect(hasImageTool).toBe(true)
   })
 
   test('passes image generation options into the injected tool', async () => {
