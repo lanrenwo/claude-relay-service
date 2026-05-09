@@ -697,7 +697,10 @@ describe('openai responses payload toggles', () => {
     expect(axios.post.mock.calls[0][1].tools).toBeUndefined()
   })
 
-  test('reserves image concurrency slots for client-provided image_generation tools', async () => {
+  test('strips advertised image_generation tool when there is no explicit image intent', async () => {
+    // A request that merely advertises the image_generation tool without explicit
+    // intent (no tool_choice, no gpt-image-* model, no image_generation options)
+    // must NOT acquire an image concurrency slot and must have the tool removed.
     unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
       accountId: 'openai-1',
       accountType: 'openai'
@@ -729,17 +732,12 @@ describe('openai responses payload toggles', () => {
 
     await openaiRoutes.handleResponses(req, createRes())
 
-    expect(redis.tryAcquireConcurrencySlot).toHaveBeenCalledWith(
-      'image_generation:key_1',
-      expect.any(String),
-      1,
-      expect.any(Number)
-    )
-    expect(axios.post.mock.calls[0][1].tools).toContainEqual({
-      type: 'image_generation',
-      output_format: 'webp',
-      output_compression: 80
-    })
+    // No image slot should be acquired for an advertise-only tool
+    expect(redis.tryAcquireConcurrencySlot).not.toHaveBeenCalled()
+    // The tool must be stripped from the forwarded request
+    const forwardedBody = axios.post.mock.calls[0][1]
+    const hasImageTool = (forwardedBody.tools || []).some((t) => t?.type === 'image_generation')
+    expect(hasImageTool).toBe(false)
   })
 
   test('passes image generation options into the injected tool', async () => {

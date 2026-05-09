@@ -446,11 +446,26 @@ async function acquireImageGenerationSlot(req, res, apiKeyData = {}) {
   }
 
   let released = false
+  // Renew the lease at half the lease interval so long-running requests
+  // (slow upstreams, large images) don't have their slot expire mid-flight.
+  const renewIntervalMs = Math.floor((leaseSeconds / 2) * 1000)
+  const renewTimer = setInterval(() => {
+    if (released) {
+      clearInterval(renewTimer)
+      return
+    }
+    redis.refreshConcurrencyLease(concurrencyKey, requestId, leaseSeconds).catch((err) => {
+      logger.warn(`Failed to renew image_generation lease: ${err.message}`)
+    })
+  }, renewIntervalMs)
+  renewTimer.unref() // prevent the timer from keeping the process alive in tests
+
   const release = () => {
     if (released) {
       return
     }
     released = true
+    clearInterval(renewTimer)
     redis.decrConcurrency(concurrencyKey, requestId).catch((error) => {
       logger.error('Failed to release image_generation slot:', error)
     })
@@ -709,10 +724,11 @@ const handleResponses = async (req, res) => {
     }
 
     const explicitImageGenerationIntent = isImageGenerationIntent(req.body)
-    const advertisedImageGenerationTool = hasImageGenerationTool(req.body)
-    const imageGenerationIntent =
-      explicitImageGenerationIntent ||
-      (apiKeyData.allowImageGeneration === true && advertisedImageGenerationTool)
+    // Only explicit intent (gpt-image-* model / tool_choice / image_generation options)
+    // qualifies as a real image request and occupies the image concurrency slot.
+    // A request that merely advertises the tool without explicit intent gets the tool
+    // stripped at line 730 so the model cannot auto-call it unexpectedly.
+    const imageGenerationIntent = explicitImageGenerationIntent
 
     if (explicitImageGenerationIntent && apiKeyData.allowImageGeneration !== true) {
       logger.security(

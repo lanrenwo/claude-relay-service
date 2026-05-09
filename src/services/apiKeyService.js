@@ -1697,20 +1697,17 @@ class ApiKeyService {
   ) {
     try {
       const finalizedRequestMeta = finalizeRequestDetailMeta(requestMeta)
-      const totalTokens =
-        inputTokens +
-        outputTokens +
-        imageInputTokens +
-        imageOutputTokens +
-        cacheCreateTokens +
-        cacheReadTokens
+      // image tokens are a detail subset of input/output_tokens, not additional tokens
+      const totalTokens = inputTokens + outputTokens + cacheCreateTokens + cacheReadTokens
 
-      // 计算费用
+      // 计算文本部分费用（从 output/input 中扣除图片子集，避免与图片费用重复计算）
+      const textInputTokens = Math.max(0, inputTokens - imageInputTokens)
+      const textOutputTokens = Math.max(0, outputTokens - imageOutputTokens)
       const CostCalculator = require('../utils/costCalculator')
       const costInfo = CostCalculator.calculateCost(
         {
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
+          input_tokens: textInputTokens,
+          output_tokens: textOutputTokens,
           cache_creation_input_tokens: cacheCreateTokens,
           cache_read_input_tokens: cacheReadTokens
         },
@@ -1747,12 +1744,12 @@ class ApiKeyService {
         ratedCost = await this.calculateRatedCost(keyId, service, realCost)
       }
 
-      // 记录API Key级别的使用统计（包含费用，图片 token 并入 input/output 汇总）
+      // 记录API Key级别的使用统计（input/output 已包含图片 token，不需再额外加）
       await redis.incrementTokenUsage(
         keyId,
         totalTokens,
-        inputTokens + imageInputTokens,
-        outputTokens + imageOutputTokens,
+        inputTokens,
+        outputTokens,
         cacheCreateTokens,
         cacheReadTokens,
         model,
