@@ -725,12 +725,18 @@ const handleResponses = async (req, res) => {
 
     const explicitImageGenerationIntent = isImageGenerationIntent(req.body)
     const advertisedImageGenerationTool = hasImageGenerationTool(req.body)
-    // imageGenerationIntent: controls whether the tool is kept and bridge instructions
-    // are injected. Codex CLI advertises image_generation in tools[] without an explicit
-    // tool_choice; the model decides when to call it, so we must keep the tool.
+    // imageGenerationIntent: controls whether the tool is kept/injected and bridge
+    // instructions are added.
+    //
+    // Three ways to qualify:
+    // 1. Explicit intent (gpt-image-* model, tool_choice, image_generation options)
+    // 2. Codex CLI already advertised the tool in tools[]
+    // 3. Codex CLI request on an image-enabled key — the tool must be injected
+    //    proactively so the model knows it can generate images when the user asks.
     const imageGenerationIntent =
       explicitImageGenerationIntent ||
-      (apiKeyData.allowImageGeneration === true && advertisedImageGenerationTool)
+      (apiKeyData.allowImageGeneration === true && advertisedImageGenerationTool) ||
+      (apiKeyData.allowImageGeneration === true && isCodexCLI)
 
     if (explicitImageGenerationIntent && apiKeyData.allowImageGeneration !== true) {
       logger.security(
