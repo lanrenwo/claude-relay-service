@@ -661,7 +661,10 @@ describe('openai responses payload toggles', () => {
     expect(axios.post.mock.calls[0][1].instructions).toContain('<codex-image-generation-bridge>')
   })
 
-  test('does not reserve image concurrency slots for text requests on image-enabled keys', async () => {
+  test('reserves image slot and injects tool even for plain text requests on image-enabled keys', async () => {
+    // Original design: always acquire slot + inject tool for image-enabled keys so the
+    // model can generate images in response to natural-language prompts without needing
+    // an explicit tool_choice signal in the request body.
     unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
       accountId: 'openai-1',
       accountType: 'openai'
@@ -692,16 +695,20 @@ describe('openai responses payload toggles', () => {
 
     await openaiRoutes.handleResponses(req, createRes())
 
-    expect(redis.tryAcquireConcurrencySlot).not.toHaveBeenCalled()
+    expect(redis.tryAcquireConcurrencySlot).toHaveBeenCalledWith(
+      'image_generation:key_1',
+      expect.any(String),
+      1,
+      expect.any(Number)
+    )
     expect(axios.post).toHaveBeenCalled()
-    expect(axios.post.mock.calls[0][1].tools).toBeUndefined()
+    const forwardedTools = axios.post.mock.calls[0][1].tools || []
+    expect(forwardedTools.some((t) => t?.type === 'image_generation')).toBe(true)
   })
 
-  test('preserves advertised image_generation tool without pre-acquiring the concurrency slot', async () => {
-    // Codex CLI advertises image_generation in tools[] without an explicit tool_choice.
-    // The tool must be kept so the model can call it, but the image concurrency slot
-    // must NOT be pre-acquired (slot is only reserved for explicit image intents such
-    // as gpt-image-* model, tool_choice, or image_generation options).
+  test('reserves image concurrency slots for image-enabled keys', async () => {
+    // For any request on an image-enabled key the relay acquires an image slot
+    // and ensures the image_generation tool is present so the model can call it.
     unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
       accountId: 'openai-1',
       accountType: 'openai'
@@ -733,9 +740,12 @@ describe('openai responses payload toggles', () => {
 
     await openaiRoutes.handleResponses(req, createRes())
 
-    // No image slot pre-acquired — explicit intent required for slot reservation
-    expect(redis.tryAcquireConcurrencySlot).not.toHaveBeenCalled()
-    // Tool must be forwarded so the model can call it when needed
+    expect(redis.tryAcquireConcurrencySlot).toHaveBeenCalledWith(
+      'image_generation:key_1',
+      expect.any(String),
+      1,
+      expect.any(Number)
+    )
     const forwardedBody = axios.post.mock.calls[0][1]
     const hasImageTool = (forwardedBody.tools || []).some((t) => t?.type === 'image_generation')
     expect(hasImageTool).toBe(true)

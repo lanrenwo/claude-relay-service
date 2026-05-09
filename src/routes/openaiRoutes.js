@@ -723,22 +723,10 @@ const handleResponses = async (req, res) => {
       }
     }
 
-    const explicitImageGenerationIntent = isImageGenerationIntent(req.body)
-    const advertisedImageGenerationTool = hasImageGenerationTool(req.body)
-    // imageGenerationIntent: controls whether the tool is kept/injected and bridge
-    // instructions are added.
-    //
-    // Three ways to qualify:
-    // 1. Explicit intent (gpt-image-* model, tool_choice, image_generation options)
-    // 2. Codex CLI already advertised the tool in tools[]
-    // 3. Codex CLI request on an image-enabled key — the tool must be injected
-    //    proactively so the model knows it can generate images when the user asks.
-    const imageGenerationIntent =
-      explicitImageGenerationIntent ||
-      (apiKeyData.allowImageGeneration === true && advertisedImageGenerationTool) ||
-      (apiKeyData.allowImageGeneration === true && isCodexCLI)
+    const imageGenerationIntent = isImageGenerationIntent(req.body)
 
-    if (explicitImageGenerationIntent && apiKeyData.allowImageGeneration !== true) {
+    // Reject explicit image requests from keys without image permission
+    if (imageGenerationIntent && apiKeyData.allowImageGeneration !== true) {
       logger.security(
         `🚫 API Key ${apiKeyData.id || 'unknown'} 未启用生图服务，拒绝 ${req.originalUrl}`
       )
@@ -751,11 +739,12 @@ const handleResponses = async (req, res) => {
       })
     }
 
-    if (!imageGenerationIntent && removeImageGenerationTool(req.body)) {
-      logger.info('🖼️ Removed non-explicit image_generation tool from text request')
+    // Strip the tool from requests on keys that have no image permission
+    if (apiKeyData.allowImageGeneration !== true && removeImageGenerationTool(req.body)) {
+      logger.info('🖼️ Removed advertised image_generation tool for API key without image service')
     }
 
-    if (apiKeyData.allowImageGeneration === true && imageGenerationIntent) {
+    if (apiKeyData.allowImageGeneration === true) {
       if (normalizeOpenAIResponsesImageOnlyModel(req.body)) {
         logger.info('🖼️ Normalized gpt-image-* /responses request to image_generation tool')
       }
@@ -796,11 +785,10 @@ const handleResponses = async (req, res) => {
       schedulerModel
     ))
 
-    // Pre-acquire the image slot only when there is explicit intent (gpt-image-* model,
-    // tool_choice, or image_generation options). Codex CLI requests that merely advertise
-    // the tool in tools[] are not pre-slotted — they hold no slot until the model
-    // actually calls the tool, which is fine because such requests complete quickly.
-    if (apiKeyData.allowImageGeneration === true && explicitImageGenerationIntent) {
+    // For image-enabled keys: always acquire slot, inject tool, and add bridge
+    // instructions so the model knows it can generate images whenever the user asks.
+    // The slot is held for the full request duration and released on response end/close.
+    if (apiKeyData.allowImageGeneration === true) {
       const imageSlot = await acquireImageGenerationSlot(req, res, apiKeyData)
       if (!imageSlot.acquired) {
         logger.security(
@@ -822,9 +810,6 @@ const handleResponses = async (req, res) => {
           `🖼️ Acquired image_generation slot for key: ${apiKeyData.id || 'unknown'}, current: ${imageSlot.currentConcurrency}, limit: ${imageSlot.limit}`
         )
       }
-    }
-
-    if (apiKeyData.allowImageGeneration === true && imageGenerationIntent) {
       if (ensureImageGenerationTool(req.body)) {
         logger.info('🖼️ Injected /responses image_generation tool for Codex backend')
       }
