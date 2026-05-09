@@ -397,7 +397,6 @@
                 生图并发限制
               </label>
               <input
-                v-model.number="form.imageConcurrencyLimit"
                 class="form-input border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
                 min="0"
                 placeholder="不修改"
@@ -611,7 +610,6 @@ const form = reactive({
   bedrockAccountId: '',
   droidAccountId: '',
   allowImageGeneration: null,
-  imageConcurrencyLimit: '',
   tags: [],
   isActive: null // null表示不修改
 })
@@ -846,8 +844,6 @@ const batchUpdateApiKeys = async () => {
     if (form.allowImageGeneration !== null) {
       updates.allowImageGeneration = form.allowImageGeneration
     }
-    if (form.imageConcurrencyLimit !== '' && form.imageConcurrencyLimit !== null) {
-      updates.imageConcurrencyLimit = parseInt(form.imageConcurrencyLimit)
     }
 
     // 账户绑定

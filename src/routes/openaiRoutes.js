@@ -422,70 +422,6 @@ function summarizeUpstreamError(error) {
   }
 }
 
-async function acquireImageGenerationSlot(req, res, apiKeyData = {}) {
-  if (apiKeyData.allowImageGeneration !== true) {
-    return { acquired: false, skipped: true }
-  }
-
-  const parsedLimit = parseInt(apiKeyData.imageConcurrencyLimit ?? 1)
-  const limit = Number.isFinite(parsedLimit) ? parsedLimit : 1
-  if (limit <= 0) {
-    return { acquired: true, skipped: true }
-  }
-
-  const requestId = crypto.randomUUID()
-  const concurrencyKey = `image_generation:${apiKeyData.id || 'unknown'}`
-  const leaseSeconds = Math.max(
-    parseInt(process.env.IMAGE_GENERATION_CONCURRENCY_LEASE_SECONDS || '900'),
-    60
-  )
-  const slot = await redis.tryAcquireConcurrencySlot(concurrencyKey, requestId, limit, leaseSeconds)
-
-  if (!slot.acquired) {
-    return { acquired: false, currentConcurrency: slot.count, limit }
-  }
-
-  let released = false
-  // Renew the lease at half the lease interval so long-running requests
-  // (slow upstreams, large images) don't have their slot expire mid-flight.
-  const renewIntervalMs = Math.floor((leaseSeconds / 2) * 1000)
-  const renewTimer = setInterval(() => {
-    if (released) {
-      clearInterval(renewTimer)
-      return
-    }
-    redis.refreshConcurrencyLease(concurrencyKey, requestId, leaseSeconds).catch((err) => {
-      logger.warn(`Failed to renew image_generation lease: ${err.message}`)
-    })
-  }, renewIntervalMs)
-  renewTimer.unref() // prevent the timer from keeping the process alive in tests
-
-  const release = () => {
-    if (released) {
-      return
-    }
-    released = true
-    clearInterval(renewTimer)
-    redis.decrConcurrency(concurrencyKey, requestId).catch((error) => {
-      logger.error('Failed to release image_generation slot:', error)
-    })
-  }
-
-  res.once('finish', release)
-  res.once('close', release)
-  res.once('error', release)
-  req.once('close', release)
-
-  req.imageGenerationConcurrencyInfo = {
-    apiKeyId: apiKeyData.id,
-    requestId,
-    concurrencyLimit: limit,
-    release
-  }
-
-  return { acquired: true, currentConcurrency: slot.count, limit, release }
-}
-
 function applyCodexImageGenerationBridgeInstructions(body = {}) {
   if (!body || typeof body !== 'object' || !hasImageGenerationTool(body)) {
     return false
@@ -793,35 +729,6 @@ const handleResponses = async (req, res) => {
       }
       if (applyCodexImageGenerationBridgeInstructions(req.body)) {
         logger.info('🖼️ Added Codex image_generation bridge instructions')
-      }
-    }
-
-    // Pre-acquire the concurrency slot only when there is an explicit image generation
-    // signal (gpt-image-* model, tool_choice targeting image_generation, or explicit
-    // image_generation options). Codex CLI natural-language requests ("generate a photo")
-    // do not carry these signals — pre-acquiring for them would block concurrent text
-    // sessions on the same key with a spurious 429.
-    if (apiKeyData.allowImageGeneration === true && imageGenerationIntent) {
-      const imageSlot = await acquireImageGenerationSlot(req, res, apiKeyData)
-      if (!imageSlot.acquired) {
-        logger.security(
-          `🚦 Image generation concurrency exceeded for key: ${apiKeyData.id || 'unknown'}, current: ${imageSlot.currentConcurrency}, limit: ${imageSlot.limit}`
-        )
-        res.set('Retry-After', '30')
-        return res.status(429).json({
-          error: {
-            message: `Too many concurrent image generation requests. Limit: ${imageSlot.limit}`,
-            type: 'rate_limit_exceeded',
-            code: 'image_concurrency_limit_exceeded'
-          },
-          currentConcurrency: imageSlot.currentConcurrency,
-          concurrencyLimit: imageSlot.limit
-        })
-      }
-      if (!imageSlot.skipped) {
-        logger.api(
-          `🖼️ Acquired image_generation slot for key: ${apiKeyData.id || 'unknown'}, current: ${imageSlot.currentConcurrency}, limit: ${imageSlot.limit}`
-        )
       }
     }
 

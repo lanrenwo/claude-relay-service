@@ -578,7 +578,6 @@
                   生图并发限制
                 </label>
                 <input
-                  v-model.number="form.imageConcurrencyLimit"
                   class="form-input border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
                   min="0"
                   placeholder="1"
@@ -1203,7 +1202,6 @@ const form = reactive({
   enableClientRestriction: false,
   allowedClients: [],
   allowImageGeneration: false,
-  imageConcurrencyLimit: 1,
   enableOpenAIResponsesCodexAdaptation: true,
   enableOpenAIResponsesPayloadRules: false,
   openaiResponsesPayloadRules: [],
@@ -1404,9 +1402,6 @@ const updateApiKey = async () => {
       weeklyResetDay: form.weeklyResetDay,
       weeklyResetHour: form.weeklyResetHour,
       allowImageGeneration: form.allowImageGeneration,
-      imageConcurrencyLimit:
-        form.imageConcurrencyLimit !== '' && form.imageConcurrencyLimit !== null
-          ? parseInt(form.imageConcurrencyLimit)
           : 1,
       enableOpenAIResponsesCodexAdaptation: form.enableOpenAIResponsesCodexAdaptation,
       enableOpenAIResponsesPayloadRules: form.enableOpenAIResponsesPayloadRules,
@@ -1791,9 +1786,6 @@ onMounted(async () => {
     props.apiKey.enableClientRestriction === true || props.apiKey.enableClientRestriction === 'true'
   form.allowImageGeneration =
     props.apiKey.allowImageGeneration === true || props.apiKey.allowImageGeneration === 'true'
-  form.imageConcurrencyLimit =
-    props.apiKey.imageConcurrencyLimit !== undefined && props.apiKey.imageConcurrencyLimit !== null
-      ? parseInt(props.apiKey.imageConcurrencyLimit)
       : 1
   form.enableOpenAIResponsesCodexAdaptation =
     props.apiKey.enableOpenAIResponsesCodexAdaptation === undefined ||

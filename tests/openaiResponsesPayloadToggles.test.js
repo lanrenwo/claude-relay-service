@@ -133,7 +133,6 @@ function createReq({
       enableOpenAIResponsesCodexAdaptation: true,
       enableOpenAIResponsesPayloadRules: false,
       openaiResponsesPayloadRules: [],
-      imageConcurrencyLimit: 1,
       ...apiKeyOverrides
     },
     _fromUnifiedEndpoint: fromUnifiedEndpoint
@@ -781,12 +780,6 @@ describe('openai responses payload toggles', () => {
 
     await openaiRoutes.handleResponses(req, createRes())
 
-    expect(redis.tryAcquireConcurrencySlot).toHaveBeenCalledWith(
-      'image_generation:key_1',
-      expect.any(String),
-      1,
-      expect.any(Number)
-    )
     expect(axios.post.mock.calls[0][1].tools).toContainEqual({
       type: 'image_generation',
       quality: 'high',
@@ -842,67 +835,6 @@ describe('openai responses payload toggles', () => {
     })
   })
 
-  test('rejects image-enabled API keys when the image concurrency limit is reached', async () => {
-    unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({
-      accountId: 'openai-1',
-      accountType: 'openai'
-    })
-    openaiAccountService.getAccount.mockResolvedValue({
-      id: 'openai-1',
-      name: 'OpenAI Account',
-      accessToken: 'encrypted-token',
-      accountId: 'chatgpt-account-1'
-    })
-    redis.tryAcquireConcurrencySlot.mockResolvedValue({ acquired: false, count: 1, limit: 1 })
-
-    const req = createReq({
-      body: {
-        model: 'gpt-4.1',
-        prompt_cache_key: 'image-limit-key',
-        stream: false,
-        tools: [{ type: 'image_generation', output_format: 'png' }],
-        tool_choice: 'image_generation'
-      },
-      apiKeyOverrides: {
-        allowImageGeneration: true,
-        imageConcurrencyLimit: 1,
-        enableOpenAIResponsesCodexAdaptation: false
-      }
-    })
-    const res = createRes()
-
-    await openaiRoutes.handleResponses(req, res)
-
-    expect(res.status).toHaveBeenCalledWith(429)
-    expect(res.payload.error.code).toBe('image_concurrency_limit_exceeded')
-    expect(axios.post).not.toHaveBeenCalled()
-    expect(redis.decrConcurrency).not.toHaveBeenCalled()
-  })
-
-  test('enforces image concurrency before relaying openai-responses accounts', async () => {
-    redis.tryAcquireConcurrencySlot.mockResolvedValue({ acquired: false, count: 1, limit: 1 })
-
-    const req = createReq({
-      body: {
-        model: 'gpt-4.1',
-        tools: [{ type: 'image_generation' }],
-        tool_choice: 'image_generation'
-      },
-      apiKeyOverrides: {
-        allowImageGeneration: true,
-        imageConcurrencyLimit: 1,
-        enableOpenAIResponsesCodexAdaptation: false
-      }
-    })
-    const res = createRes()
-
-    await openaiRoutes.handleResponses(req, res)
-
-    expect(res.status).toHaveBeenCalledWith(429)
-    expect(res.payload.error.code).toBe('image_concurrency_limit_exceeded')
-    expect(openaiResponsesRelayService.handleRequest).not.toHaveBeenCalled()
-    expect(redis.decrConcurrency).not.toHaveBeenCalled()
-  })
 
   test('records per-image metadata for multiple generated images', async () => {
     unifiedOpenAIScheduler.selectAccountForApiKey.mockResolvedValue({

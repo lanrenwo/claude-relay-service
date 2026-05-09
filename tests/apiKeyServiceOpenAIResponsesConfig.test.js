@@ -55,13 +55,11 @@ describe('apiKeyService openai responses config', () => {
     expect(storedKeyData.enableOpenAIResponsesPayloadRules).toBe('false')
     expect(storedKeyData.openaiResponsesPayloadRules).toBe('[]')
     expect(storedKeyData.allowImageGeneration).toBe('false')
-    expect(storedKeyData.imageConcurrencyLimit).toBe('1')
 
     expect(result.enableOpenAIResponsesCodexAdaptation).toBe(true)
     expect(result.enableOpenAIResponsesPayloadRules).toBe(false)
     expect(result.openaiResponsesPayloadRules).toEqual([])
     expect(result.allowImageGeneration).toBe(false)
-    expect(result.imageConcurrencyLimit).toBe(1)
   })
 
   test('updateApiKey serializes toggle, image, and payload rule fields', async () => {
@@ -77,7 +75,6 @@ describe('apiKeyService openai responses config', () => {
     await apiKeyService.updateApiKey('key-1', {
       enableOpenAIResponsesCodexAdaptation: false,
       allowImageGeneration: true,
-      imageConcurrencyLimit: 2,
       enableOpenAIResponsesPayloadRules: true,
       openaiResponsesPayloadRules: [{ path: 'model', valueType: 'string', value: 'gpt-5' }]
     })
@@ -85,7 +82,6 @@ describe('apiKeyService openai responses config', () => {
     const [, storedKeyData] = redis.setApiKey.mock.calls[0]
     expect(storedKeyData.enableOpenAIResponsesCodexAdaptation).toBe('false')
     expect(storedKeyData.allowImageGeneration).toBe('true')
-    expect(storedKeyData.imageConcurrencyLimit).toBe('2')
     expect(storedKeyData.enableOpenAIResponsesPayloadRules).toBe('true')
     expect(storedKeyData.openaiResponsesPayloadRules).toBe(
       JSON.stringify([{ path: 'model', valueType: 'string', value: 'gpt-5' }])
@@ -117,7 +113,6 @@ describe('apiKeyService openai responses config', () => {
       azureOpenaiAccountId: '',
       ccrAccountId: '',
       allowImageGeneration: 'true',
-      imageConcurrencyLimit: '3',
       enableOpenAIResponsesCodexAdaptation: 'false',
       enableOpenAIResponsesPayloadRules: 'true',
       openaiResponsesPayloadRules: JSON.stringify([
@@ -128,7 +123,6 @@ describe('apiKeyService openai responses config', () => {
     const result = await apiKeyService.getApiKeyById('key-1')
 
     expect(result.allowImageGeneration).toBe(true)
-    expect(result.imageConcurrencyLimit).toBe(3)
     expect(result.enableOpenAIResponsesCodexAdaptation).toBe(false)
     expect(result.enableOpenAIResponsesPayloadRules).toBe(true)
     expect(result.openaiResponsesPayloadRules).toEqual([

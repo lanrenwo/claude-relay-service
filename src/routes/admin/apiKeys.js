@@ -1496,7 +1496,6 @@ router.post('/api-keys', authenticateAdmin, async (req, res) => {
       weeklyResetDay, // 周费用重置日 (1-7)
       weeklyResetHour, // 周费用重置时 (0-23)
       allowImageGeneration,
-      imageConcurrencyLimit,
       enableOpenAIResponsesCodexAdaptation,
       enableOpenAIResponsesPayloadRules,
       openaiResponsesPayloadRules
@@ -1637,17 +1636,6 @@ router.post('/api-keys', authenticateAdmin, async (req, res) => {
     }
 
     if (
-      imageConcurrencyLimit !== undefined &&
-      imageConcurrencyLimit !== null &&
-      imageConcurrencyLimit !== '' &&
-      (!Number.isInteger(Number(imageConcurrencyLimit)) || Number(imageConcurrencyLimit) < 0)
-    ) {
-      return res
-        .status(400)
-        .json({ error: 'Image concurrency limit must be a non-negative integer' })
-    }
-
-    if (
       enableOpenAIResponsesCodexAdaptation !== undefined &&
       typeof enableOpenAIResponsesCodexAdaptation !== 'boolean'
     ) {
@@ -1724,12 +1712,6 @@ router.post('/api-keys', authenticateAdmin, async (req, res) => {
           ? Number(weeklyResetHour)
           : 0,
       allowImageGeneration: allowImageGeneration === true,
-      imageConcurrencyLimit:
-        imageConcurrencyLimit !== undefined &&
-        imageConcurrencyLimit !== null &&
-        imageConcurrencyLimit !== ''
-          ? Number(imageConcurrencyLimit)
-          : 1,
       enableOpenAIResponsesCodexAdaptation:
         enableOpenAIResponsesCodexAdaptation !== undefined
           ? enableOpenAIResponsesCodexAdaptation
@@ -1780,8 +1762,7 @@ router.post('/api-keys/batch', authenticateAdmin, async (req, res) => {
       expirationMode,
       icon,
       serviceRates,
-      allowImageGeneration,
-      imageConcurrencyLimit
+      allowImageGeneration
     } = req.body
 
     // 输入验证
@@ -1813,17 +1794,6 @@ router.post('/api-keys/batch', authenticateAdmin, async (req, res) => {
 
     if (allowImageGeneration !== undefined && typeof allowImageGeneration !== 'boolean') {
       return res.status(400).json({ error: 'allowImageGeneration must be a boolean' })
-    }
-
-    if (
-      imageConcurrencyLimit !== undefined &&
-      imageConcurrencyLimit !== null &&
-      imageConcurrencyLimit !== '' &&
-      (!Number.isInteger(Number(imageConcurrencyLimit)) || Number(imageConcurrencyLimit) < 0)
-    ) {
-      return res
-        .status(400)
-        .json({ error: 'Image concurrency limit must be a non-negative integer' })
     }
 
     // 生成批量API Keys
@@ -1862,13 +1832,7 @@ router.post('/api-keys/batch', authenticateAdmin, async (req, res) => {
           expirationMode,
           icon,
           serviceRates,
-          allowImageGeneration: allowImageGeneration === true,
-          imageConcurrencyLimit:
-            imageConcurrencyLimit !== undefined &&
-            imageConcurrencyLimit !== null &&
-            imageConcurrencyLimit !== ''
-              ? Number(imageConcurrencyLimit)
-              : 1
+          allowImageGeneration: allowImageGeneration === true
         })
 
         // 保留原始 API Key 供返回
@@ -2029,17 +1993,6 @@ router.put('/api-keys/batch', authenticateAdmin, async (req, res) => {
           }
           finalUpdates.allowImageGeneration = updates.allowImageGeneration
         }
-        if (updates.imageConcurrencyLimit !== undefined) {
-          const limit = Number(updates.imageConcurrencyLimit)
-          if (!Number.isInteger(limit) || limit < 0) {
-            results.failedCount++
-            results.errors.push(
-              `imageConcurrencyLimit for API key ${keyId} must be a non-negative integer`
-            )
-            continue
-          }
-          finalUpdates.imageConcurrencyLimit = limit
-        }
         if (updates.weeklyResetDay !== undefined) {
           const day = Number(updates.weeklyResetDay)
           if (Number.isInteger(day) && day >= 1 && day <= 7) {
@@ -2190,7 +2143,6 @@ router.put('/api-keys/:keyId', authenticateAdmin, async (req, res) => {
       weeklyResetDay, // 周费用重置日 (1-7)
       weeklyResetHour, // 周费用重置时 (0-23)
       allowImageGeneration,
-      imageConcurrencyLimit,
       enableOpenAIResponsesCodexAdaptation,
       enableOpenAIResponsesPayloadRules,
       openaiResponsesPayloadRules
@@ -2393,19 +2345,6 @@ router.put('/api-keys/:keyId', authenticateAdmin, async (req, res) => {
         return res.status(400).json({ error: 'allowImageGeneration must be a boolean' })
       }
       updates.allowImageGeneration = allowImageGeneration
-    }
-
-    if (
-      imageConcurrencyLimit !== undefined &&
-      imageConcurrencyLimit !== null &&
-      imageConcurrencyLimit !== ''
-    ) {
-      if (!Number.isInteger(Number(imageConcurrencyLimit)) || Number(imageConcurrencyLimit) < 0) {
-        return res
-          .status(400)
-          .json({ error: 'Image concurrency limit must be a non-negative integer' })
-      }
-      updates.imageConcurrencyLimit = Number(imageConcurrencyLimit)
     }
 
     if (enableOpenAIResponsesCodexAdaptation !== undefined) {

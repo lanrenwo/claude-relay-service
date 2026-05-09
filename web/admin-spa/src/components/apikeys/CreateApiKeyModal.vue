@@ -731,7 +731,6 @@
                   生图并发限制
                 </label>
                 <input
-                  v-model.number="form.imageConcurrencyLimit"
                   class="form-input border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
                   min="0"
                   placeholder="1"
@@ -1153,7 +1152,6 @@ const form = reactive({
   enableClientRestriction: false,
   allowedClients: [],
   allowImageGeneration: false,
-  imageConcurrencyLimit: 1,
   tags: []
 })
 
@@ -1579,9 +1577,6 @@ const createApiKey = async () => {
       activationUnit: form.expirationMode === 'activation' ? form.activationUnit : undefined,
       permissions: form.permissions,
       allowImageGeneration: form.allowImageGeneration,
-      imageConcurrencyLimit:
-        form.imageConcurrencyLimit !== '' && form.imageConcurrencyLimit !== null
-          ? parseInt(form.imageConcurrencyLimit)
           : 1,
       tags: form.tags.length > 0 ? form.tags : undefined,
       enableModelRestriction: form.enableModelRestriction,
