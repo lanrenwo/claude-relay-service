@@ -1,5 +1,46 @@
 # Claude Relay Service
 
+## feat/codex-image-generation 分支更新说明
+
+### 生图功能（Codex CLI `/responses` 接口）
+
+**功能支持**
+- 为开启 `allowImageGeneration` 权限的 API Key，自动向 Codex CLI 请求注入 `image_generation` 工具及 bridge 指令，使模型能响应自然语言生图请求（无需客户端显式设置 `tool_choice`）
+- 支持 `gpt-image-*` 模型直接调用、`tool_choice: image_generation` 显式指定、`image_generation` 参数配置等多种触发方式
+- 生图权限与普通文字请求隔离：未开启权限的 Key 会自动移除请求中的 `image_generation` 工具
+
+**计费对齐（sub2api 标准）**
+- 图片 token（`tool_usage.image_gen`）是 `output_tokens` 的明细子集，修复了原先将图片 token 重复叠加导致费用虚高的问题
+- 文字部分费用用 `textOutputTokens = outputTokens - imageOutputTokens` 计算，图片部分按图片模型独立计费，两者不重叠
+- 新增 `src/utils/imageGenerationParser.js` 共享解析器，统一处理 `image_generation_call` / `image_generation.completed` 事件、partial image 过滤、SHA-256 去重、`b64_json`/`url` 兜底、`revised_prompt` 记录
+- 默认图片模型兜底从 `gpt-image-1` 改为 `gpt-image-2`（对齐 sub2api 当前默认值）
+- `pricingService` 新增 `gpt-image-*` 专用回退链：`gpt-image-2` → `gpt-image-1.5` → `gpt-image-1`，防止未知版本漏计费
+
+**并发控制**
+- 删除了原有的 per-key 图片并发槽（`imageConcurrencyLimit`）—— sub2api 无此设计，该机制会导致多个 Codex CLI 会话互相 429
+- 工具注入与槽预占分离：工具无条件注入（保证自然语言生图可用），槽预占仅在显式生图意图时触发
+
+**用量记录修复**
+- 修复客户端中途退出（Codex `quit`）时用量漏记的问题：`req.on('close')` 现在直接在清理上游流之前记录已采集的 token 和图片元数据，不再依赖上游流事件
+- 同步修复 `openaiResponsesRelayService` 的相同问题
+- `openaiResponsesRelayService` 的流式和非流式路径均接入图片 token 解析，确保 openai-responses 账户也能正确计费生图
+
+### 请求明细增强
+
+- 新增图片生成元数据展示：张数、格式、尺寸、质量、背景、模型、每张图详情
+- 新增 `hasImage` 筛选器，支持按是否包含生图过滤
+- 新增首 Token 延迟（`firstTokenLatencyMs`）和客户端 IP 字段，列表和详情均展示
+- 请求明细汇总新增 `imageInputTokens` / `imageOutputTokens` 字段
+- `costBreakdown` 新增 `imageTotal` 字段，账单拆分与总费用一致
+
+### 管理界面
+
+- API Key 创建/编辑/批量编辑页面新增 `allowImageGeneration` 开关
+- API Key 列表新增生图权限标识列
+- 请求明细列表新增图片生成标签、首 Token 延迟、耗时（秒）、IP 显示
+
+---
+
 > [!CAUTION]
 > **安全更新通知**：v1.1.248 及以下版本存在严重的管理员认证绕过漏洞，攻击者可未授权访问管理面板。
 >
