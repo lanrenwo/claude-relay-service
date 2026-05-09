@@ -76,10 +76,29 @@ data/init.json            # 管理员凭据
 
 关键机制：
 - **粘性会话**: 基于请求内容 hash 绑定账户，同一会话用同一账户
-- **并发控制**: Redis Sorted Set 实现，支持排队等待（非直接 429）
+- **并发控制**: API Key 级（`concurrencyLimit` 字段，`auth.js` 执行，带排队等待）；OpenAI 账户级待实现（对齐 sub2api `account.Concurrency`）；无 per-image 槽
 - **529 处理**: 自动标记过载账户，配置时长内排除
 - **加密存储**: 敏感数据（OAuth token、credentials）AES 加密存于 Redis
-- **流式响应**: SSE 传输，实时捕获 usage，客户端断开时 AbortController 清理资源
+- **流式响应**: SSE 传输，实时捕获 usage，`req.on('close')` 时先记录已采集用量再销毁上游流
+
+### Codex CLI 生图流程（`openaiRoutes.js` `/responses` 路由）
+
+```
+请求到达 → 检测是否 Codex CLI UA → 检查 allowImageGeneration 权限
+  → 无权限：移除 tools[] 里的 image_generation 工具
+  → 有权限：无条件调用 ensureImageGenerationTool() 注入工具
+           + applyCodexImageGenerationBridgeInstructions() 注入 bridge 指令
+  → 显式生图意图（gpt-image-* 模型/tool_choice/image_generation 参数）时才预占并发槽
+  → 转发上游 → SSE 流中解析 image_generation_call / image_generation.completed 事件
+  → imgTracker 去重计数（SHA-256） → response.completed 捕获 tool_usage.image_gen tokens
+  → 客户端断开时立即在 cleanup() 中记录用量（不等上游 end/error 事件）
+```
+
+**图片 token 计费原则**（对齐 sub2api）：`tool_usage.image_gen.output_tokens` 是 `output_tokens` 的明细子集，不是额外 token。计费时：`textOutputTokens = outputTokens - imageOutputTokens`，文字按主模型计费，图片按图片模型单独计费，不重叠。
+
+**`src/utils/imageGenerationParser.js`** — 每请求一个 tracker 实例（`createImageGenerationTracker()`），暴露 `{ recordItem, recordCompletedEvent, recordResponseMeta, build }`。`build(reqBody)` 按优先级解析 `toolModel`：`response.tools[].model` → `item.model` → `reqBody` 工具配置 → `'gpt-image-2'`（默认）。过滤 partial image 帧（`partial_image_index` 字段或类型名含 `partial_image`）。
+
+**请求明细元数据**：统一通过 `src/utils/requestDetailHelper.js` 的 `createRequestDetailMeta(req, overrides)` 创建，在 `apiKeyService.recordUsage()` 内部调用 `finalizeRequestDetailMeta()` 补充 `durationMs`（基于 `req.requestStartedAt`）和 `clientIp`（由 `auth.js` 的 `requestLogger` 写入 `req.clientIp`）。
 
 ## 开发规范
 
