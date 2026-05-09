@@ -785,10 +785,23 @@ const handleResponses = async (req, res) => {
       schedulerModel
     ))
 
-    // For image-enabled keys: always acquire slot, inject tool, and add bridge
-    // instructions so the model knows it can generate images whenever the user asks.
-    // The slot is held for the full request duration and released on response end/close.
     if (apiKeyData.allowImageGeneration === true) {
+      // Always inject tool + bridge so the model knows it can generate images on demand.
+      // Slot pre-acquisition is intentionally separate (see below).
+      if (ensureImageGenerationTool(req.body)) {
+        logger.info('🖼️ Injected /responses image_generation tool for Codex backend')
+      }
+      if (applyCodexImageGenerationBridgeInstructions(req.body)) {
+        logger.info('🖼️ Added Codex image_generation bridge instructions')
+      }
+    }
+
+    // Pre-acquire the concurrency slot only when there is an explicit image generation
+    // signal (gpt-image-* model, tool_choice targeting image_generation, or explicit
+    // image_generation options). Codex CLI natural-language requests ("generate a photo")
+    // do not carry these signals — pre-acquiring for them would block concurrent text
+    // sessions on the same key with a spurious 429.
+    if (apiKeyData.allowImageGeneration === true && imageGenerationIntent) {
       const imageSlot = await acquireImageGenerationSlot(req, res, apiKeyData)
       if (!imageSlot.acquired) {
         logger.security(
@@ -809,12 +822,6 @@ const handleResponses = async (req, res) => {
         logger.api(
           `🖼️ Acquired image_generation slot for key: ${apiKeyData.id || 'unknown'}, current: ${imageSlot.currentConcurrency}, limit: ${imageSlot.limit}`
         )
-      }
-      if (ensureImageGenerationTool(req.body)) {
-        logger.info('🖼️ Injected /responses image_generation tool for Codex backend')
-      }
-      if (applyCodexImageGenerationBridgeInstructions(req.body)) {
-        logger.info('🖼️ Added Codex image_generation bridge instructions')
       }
     }
 
