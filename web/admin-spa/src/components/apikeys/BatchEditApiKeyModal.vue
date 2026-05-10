@@ -844,7 +844,6 @@ const batchUpdateApiKeys = async () => {
     if (form.allowImageGeneration !== null) {
       updates.allowImageGeneration = form.allowImageGeneration
     }
-    }
 
     // 账户绑定
     if (form.claudeAccountId !== '') {

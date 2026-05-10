@@ -142,8 +142,35 @@ function applyCodexCliAdaptation(body = {}) {
 
 const CODEX_IMAGE_BRIDGE_MARKER = '<codex-image-generation-bridge>'
 const CODEX_IMAGE_BRIDGE_TEXT = `${CODEX_IMAGE_BRIDGE_MARKER}
-When the user asks for raster image generation or editing, use the OpenAI Responses native \`image_generation\` tool attached to this request. The local Codex client may not expose an \`image_gen\` namespace, but that does not mean image generation is unavailable. Do not ask the user to switch to CLI fallback solely because \`image_gen\` is absent.
+When the user asks for image generation or editing — including scene changes, background replacement, style transfer, or any visual transformation — you MUST use the OpenAI Responses native \`image_generation\` tool attached to this request. When editing an uploaded image, call the tool with \`action: "edit"\`. Do NOT use local CLI commands (image_gen, imagegen) or any other fallback mechanism for image tasks; the native tool handles all image work directly, regardless of whether the \`image_gen\` namespace is visible in the client.
 </codex-image-generation-bridge>`
+
+function hasImageContentInInput(body = {}) {
+  if (!body || typeof body !== 'object') {
+    return false
+  }
+  const { input } = body
+  if (!input) {
+    return false
+  }
+  const items = Array.isArray(input) ? input : [input]
+  for (const item of items) {
+    if (!item || typeof item !== 'object') {
+      continue
+    }
+    const content = Array.isArray(item.content) ? item.content : []
+    for (const part of content) {
+      if (!part || typeof part !== 'object') {
+        continue
+      }
+      const type = typeof part.type === 'string' ? part.type.toLowerCase() : ''
+      if (type === 'input_image' || type === 'image_url' || type === 'image') {
+        return true
+      }
+    }
+  }
+  return false
+}
 
 function hasImageGenerationTool(body = {}) {
   if (!body || typeof body !== 'object' || !Array.isArray(body.tools)) {
@@ -331,6 +358,11 @@ function ensureImageGenerationTool(body = {}) {
     return false
   }
   const tool = buildImageGenerationTool(body)
+  // When there is an uploaded image in the input, this is an edit request.
+  // Explicitly set action so the model and backend both understand the intent.
+  if (!tool.action && hasImageContentInInput(body)) {
+    tool.action = 'edit'
+  }
   if (!Array.isArray(body.tools)) {
     body.tools = [tool]
     return true

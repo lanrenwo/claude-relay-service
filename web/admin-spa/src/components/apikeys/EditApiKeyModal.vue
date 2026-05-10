@@ -1402,7 +1402,6 @@ const updateApiKey = async () => {
       weeklyResetDay: form.weeklyResetDay,
       weeklyResetHour: form.weeklyResetHour,
       allowImageGeneration: form.allowImageGeneration,
-          : 1,
       enableOpenAIResponsesCodexAdaptation: form.enableOpenAIResponsesCodexAdaptation,
       enableOpenAIResponsesPayloadRules: form.enableOpenAIResponsesPayloadRules,
       // 规则内容独立持久化，关闭开关时也要保留已保存的休眠规则。
@@ -1786,7 +1785,6 @@ onMounted(async () => {
     props.apiKey.enableClientRestriction === true || props.apiKey.enableClientRestriction === 'true'
   form.allowImageGeneration =
     props.apiKey.allowImageGeneration === true || props.apiKey.allowImageGeneration === 'true'
-      : 1
   form.enableOpenAIResponsesCodexAdaptation =
     props.apiKey.enableOpenAIResponsesCodexAdaptation === undefined ||
     props.apiKey.enableOpenAIResponsesCodexAdaptation === true ||

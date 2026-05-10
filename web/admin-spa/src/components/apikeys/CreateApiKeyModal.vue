@@ -1577,7 +1577,6 @@ const createApiKey = async () => {
       activationUnit: form.expirationMode === 'activation' ? form.activationUnit : undefined,
       permissions: form.permissions,
       allowImageGeneration: form.allowImageGeneration,
-          : 1,
       tags: form.tags.length > 0 ? form.tags : undefined,
       enableModelRestriction: form.enableModelRestriction,
       restrictedModels: form.restrictedModels,
