@@ -88,11 +88,16 @@ data/init.json            # 管理员凭据
   → 无权限：移除 tools[] 里的 image_generation 工具
   → 有权限：无条件调用 ensureImageGenerationTool() 注入工具
            + applyCodexImageGenerationBridgeInstructions() 注入 bridge 指令
+           + 若 input[] 含图片内容，自动在注入工具上设置 action:"edit"
   → 显式生图意图（gpt-image-* 模型/tool_choice/image_generation 参数）时才预占并发槽
   → 转发上游 → SSE 流中解析 image_generation_call / image_generation.completed 事件
   → imgTracker 去重计数（SHA-256） → response.completed 捕获 tool_usage.image_gen tokens
   → 客户端断开时立即在 cleanup() 中记录用量（不等上游 end/error 事件）
 ```
+
+**生图权限前提**：API Key 必须设置 `allowImageGeneration: true`，否则工具不注入、bridge 指令不添加，模型会回退到本地 CLI 技能（imagegen skill）。
+
+**Codex UA 区分**：`codexCliPattern = /^(codex_vscode|codex_cli_rs|codex_exec)\//i`。只有匹配此模式的 UA（`isCodexCLI = true`）才跳过 `applyCodexCliAdaptation`（保留客户端原始 instructions）。`Codex Desktop/x.x.x` 不匹配，会触发 adaptation 用 `CODEX_CLI_INSTRUCTIONS` 覆盖原始 instructions，bridge 指令随后追加。
 
 **图片 token 计费原则**（对齐 sub2api）：`tool_usage.image_gen.output_tokens` 是 `output_tokens` 的明细子集，不是额外 token。计费时：`textOutputTokens = outputTokens - imageOutputTokens`，文字按主模型计费，图片按图片模型单独计费，不重叠。
 
@@ -118,6 +123,20 @@ data/init.json            # 管理员凭据
 4. **检查** → `npm run lint`
 5. **测试** → `npm test`
 6. **验证** → `npm run cli status` 确认服务正常
+
+### Commit 规范
+
+提交信息使用中文描述，格式：`type(scope): 中文说明`。type 仍用英文（feat/fix/docs/refactor/remove 等），scope 和描述用中文或拼音均可，正文用中文。
+
+### Push 前必做
+
+**每次 push 代码前，必须完成编译验证，确保代码可运行：**
+
+- 修改了后端（`src/`、`config/`）→ `npm run lint:check`
+- 修改了前端（`web/admin-spa/src/`）→ `npm run build:web`（dist 不会自动更新，push 旧 dist 会导致线上 UI 停留在旧版本）
+- 两者都改了 → 两步都跑
+
+前端 dist 已纳入版本控制，build 产物必须随源码一起提交。
 
 ### 测试规范
 
