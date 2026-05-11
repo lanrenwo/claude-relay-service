@@ -211,6 +211,40 @@ function normalizeImageGenerationMeta(value) {
   }
 }
 
+function fillImageCostBreakdown(breakdown, imageGeneration) {
+  if (!breakdown || !imageGeneration) {
+    return breakdown
+  }
+  if (
+    breakdown.imageInput !== null &&
+    breakdown.imageInput !== undefined &&
+    breakdown.imageOutput !== null &&
+    breakdown.imageOutput !== undefined
+  ) {
+    return breakdown
+  }
+  const { toolModel, inputTokens: imgIn, outputTokens: imgOut } = imageGeneration
+  if (!toolModel || (!imgIn && !imgOut)) {
+    return breakdown
+  }
+  try {
+    const pricingService = require('./pricingService')
+    const pricing = pricingService.getModelPricing(toolModel)
+    if (!pricing) {
+      return breakdown
+    }
+    const inPrice = pricing.input_cost_per_image_token || pricing.input_cost_per_token || 0
+    const outPrice = pricing.output_cost_per_image_token || pricing.output_cost_per_token || 0
+    return {
+      ...breakdown,
+      imageInput: Number(((imgIn || 0) * inPrice).toFixed(8)),
+      imageOutput: Number(((imgOut || 0) * outPrice).toFixed(8))
+    }
+  } catch (_err) {
+    return breakdown
+  }
+}
+
 function normalizeHasImageFilterValue(value) {
   if (value === null || value === undefined) {
     return null
@@ -669,6 +703,8 @@ class RequestDetailService {
     const cost = normalizeNumber(detail.cost, 6)
     const realCost = normalizeNumber(detail.realCost, 6)
     const reasoningInfo = extractRequestReasoningInfo(requestBodySource)
+    const imageGeneration = normalizeImageGenerationMeta(detail.imageGeneration)
+
     const normalized = {
       requestId,
       timestamp,
@@ -688,15 +724,15 @@ class RequestDetailService {
       totalTokens,
       cost,
       realCost,
-      costBreakdown: detail.costBreakdown || null,
-      realCostBreakdown: detail.realCostBreakdown || null,
+      costBreakdown: fillImageCostBreakdown(detail.costBreakdown || null, imageGeneration),
+      realCostBreakdown: fillImageCostBreakdown(detail.realCostBreakdown || null, imageGeneration),
       durationMs,
       firstTokenLatencyMs,
       clientIp: normalizeOptionalString(detail.clientIp),
       isLongContextRequest: detail.isLongContextRequest === true,
       reasoningDisplay: detail.reasoningDisplay || reasoningInfo.reasoningDisplay || null,
       reasoningSource: detail.reasoningSource || reasoningInfo.reasoningSource || null,
-      imageGeneration: normalizeImageGenerationMeta(detail.imageGeneration)
+      imageGeneration
     }
 
     if (options.bodyPreviewEnabled && requestBodySource !== undefined) {
@@ -1028,9 +1064,12 @@ class RequestDetailService {
         record.accountType,
         accountCache
       )
+      const imageGen = normalizeImageGenerationMeta(record.imageGeneration)
 
       enriched.push({
         ...record,
+        costBreakdown: fillImageCostBreakdown(record.costBreakdown || null, imageGen),
+        realCostBreakdown: fillImageCostBreakdown(record.realCostBreakdown || null, imageGen),
         apiKeyName: apiKeyName || record.apiKeyId || '未知 Key',
         accountName: accountInfo?.accountName || record.accountId || '未知账户',
         accountType: accountInfo?.accountType || record.accountType || 'unknown',

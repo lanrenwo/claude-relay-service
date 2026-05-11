@@ -202,10 +202,22 @@
             <div class="cost-chip">
               <span>输入</span>
               <strong>{{ formatCost(costBreakdown.input) }}</strong>
+              <span
+                v-if="costBreakdown.imageInput"
+                class="text-xs text-amber-500 dark:text-amber-400"
+              >
+                +{{ formatCost(costBreakdown.imageInput) }} 🖼️
+              </span>
             </div>
             <div class="cost-chip">
               <span>输出</span>
               <strong>{{ formatCost(costBreakdown.output) }}</strong>
+              <span
+                v-if="costBreakdown.imageOutput"
+                class="text-xs text-amber-500 dark:text-amber-400"
+              >
+                +{{ formatCost(costBreakdown.imageOutput) }} 🖼️
+              </span>
             </div>
             <div class="cost-chip">
               <span>缓存创建</span>
@@ -219,7 +231,15 @@
             </div>
             <div class="cost-chip">
               <span>总计</span>
-              <strong>{{ formatCost(costBreakdown.total || detail.cost) }}</strong>
+              <strong>{{ formatCost(detail.realCost || detail.cost) }}</strong>
+              <template v-if="costBreakdown.imageTotal">
+                <span class="text-xs text-gray-400 dark:text-gray-500">
+                  文字 {{ formatCost(costBreakdown.total) }}
+                </span>
+                <span class="text-xs text-amber-500 dark:text-amber-400">
+                  🖼️ {{ formatCost(costBreakdown.imageTotal) }}
+                </span>
+              </template>
             </div>
           </div>
         </div>
@@ -285,6 +305,9 @@ const costBreakdown = computed(() => {
     output: breakdown.output || 0,
     cacheCreate: breakdown.cacheCreate || breakdown.cacheWrite || 0,
     cacheRead: breakdown.cacheRead || 0,
+    imageInput: breakdown.imageInput || 0,
+    imageOutput: breakdown.imageOutput || 0,
+    imageTotal: breakdown.imageTotal || 0,
     total: breakdown.total || detail.value?.realCost || detail.value?.cost || 0
   }
 })

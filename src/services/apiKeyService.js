@@ -1704,6 +1704,8 @@ class ApiKeyService {
       // 计算图片 token 费用（独立费率，对齐 sub2api 实现）
       const pricingService = require('./pricingService')
       let imageCost = 0
+      let imageInputCost = 0
+      let imageOutputCost = 0
       if ((imageOutputTokens > 0 || imageInputTokens > 0) && imageModel) {
         const imgPricing = pricingService.getModelPricing(imageModel)
         if (imgPricing) {
@@ -1711,7 +1713,9 @@ class ApiKeyService {
             imgPricing.output_cost_per_image_token || imgPricing.output_cost_per_token || 0
           const imgInPrice =
             imgPricing.input_cost_per_image_token || imgPricing.input_cost_per_token || 0
-          imageCost = imageOutputTokens * imgOutPrice + imageInputTokens * imgInPrice
+          imageInputCost = imageInputTokens * imgInPrice
+          imageOutputCost = imageOutputTokens * imgOutPrice
+          imageCost = imageInputCost + imageOutputCost
         }
       }
 
@@ -1821,10 +1825,20 @@ class ApiKeyService {
         cost: Number(ratedCost.toFixed(6)),
         realCost: Number(realCost.toFixed(6)),
         costBreakdown: costInfo?.costs
-          ? { ...costInfo.costs, imageTotal: Number(imageCost.toFixed(8)) }
+          ? {
+              ...costInfo.costs,
+              imageInput: Number(imageInputCost.toFixed(8)),
+              imageOutput: Number(imageOutputCost.toFixed(8)),
+              imageTotal: Number(imageCost.toFixed(8))
+            }
           : undefined,
         realCostBreakdown: costInfo?.costs
-          ? { ...costInfo.costs, imageTotal: Number(imageCost.toFixed(8)) }
+          ? {
+              ...costInfo.costs,
+              imageInput: Number(imageInputCost.toFixed(8)),
+              imageOutput: Number(imageOutputCost.toFixed(8)),
+              imageTotal: Number(imageCost.toFixed(8))
+            }
           : undefined,
         isLongContext: isLongContextRequest,
         imageGeneration:

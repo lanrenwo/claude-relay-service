@@ -571,6 +571,12 @@
                   <td class="table-cell">{{ formatPercent(record.cacheHitRate) }}</td>
                   <td class="table-cell text-amber-600 dark:text-amber-400">
                     {{ formatCost(record.cost) }}
+                    <div
+                      v-if="record.costBreakdown && record.costBreakdown.imageTotal"
+                      class="text-xs text-amber-500 dark:text-amber-400"
+                    >
+                      含 {{ formatCost(record.costBreakdown.imageTotal) }} 🖼️
+                    </div>
                   </td>
                   <td class="table-cell">{{ formatDuration(record.firstTokenLatencyMs) }}</td>
                   <td class="table-cell">{{ formatDuration(record.durationMs) }}</td>
@@ -650,7 +656,12 @@
                 <div>首 TOKEN：{{ formatDuration(record.firstTokenLatencyMs) }}</div>
                 <div>耗时：{{ formatDuration(record.durationMs) }}</div>
                 <div class="text-amber-600 dark:text-amber-400">
-                  费用：{{ formatCost(record.cost) }}
+                  费用：{{ formatCost(record.cost)
+                  }}<span
+                    v-if="record.costBreakdown && record.costBreakdown.imageTotal"
+                    class="ml-1 text-amber-500 dark:text-amber-400"
+                    >（含 {{ formatCost(record.costBreakdown.imageTotal) }} 🖼️）</span
+                  >
                 </div>
                 <div class="text-xs text-gray-500 dark:text-gray-400">{{ record.requestId }}</div>
               </div>
