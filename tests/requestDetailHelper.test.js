@@ -7,6 +7,7 @@ const {
   getRequestClientIp,
   extractOpenAICacheReadTokens,
   isOpenAIRelatedEndpoint,
+  getRequestDetailCacheMetrics,
   calculateCacheHitRate
 } = require('../src/utils/requestDetailHelper')
 
@@ -272,18 +273,37 @@ describe('requestDetailHelper', () => {
     ).toBe(0)
   })
 
-  test('calculateCacheHitRate uses cacheRead / (cacheRead + cacheCreate) for non-openai requests', () => {
-    expect(calculateCacheHitRate(120, 80)).toBe(60)
+  test('calculateCacheHitRate uses cacheRead / (input + cacheRead + cacheCreate)', () => {
+    expect(calculateCacheHitRate(2048, 0, 17206)).toBe(10.64)
+    expect(calculateCacheHitRate(120, 80, 100)).toBe(40)
     expect(calculateCacheHitRate(0, 0)).toBe(0)
   })
 
-  test('calculateCacheHitRate uses cached_tokens / prompt_tokens for /openai/ requests', () => {
+  test('getRequestDetailCacheMetrics exposes formula details for the request detail page', () => {
+    const metrics = getRequestDetailCacheMetrics({
+      endpoint: '/api/v1/messages',
+      accountType: 'claude-console',
+      inputTokens: 17206,
+      outputTokens: 51,
+      cacheReadTokens: 2048,
+      cacheCreateTokens: 0
+    })
+
+    expect(metrics.numerator).toBe(2048)
+    expect(metrics.denominator).toBe(19254)
+    expect(metrics.rate).toBe(10.64)
+    expect(metrics.cacheHitFormula).toBe(
+      'cacheReadTokens / (inputTokens + cacheReadTokens + cacheCreateTokens)'
+    )
+  })
+
+  test('calculateCacheHitRate uses the same input-side denominator for /openai/ requests', () => {
     expect(
       calculateCacheHitRate({
         endpoint: '/openai/v1/responses',
         inputTokens: 100,
         cacheReadTokens: 60,
-        cacheCreateTokens: 999
+        cacheCreateTokens: 0
       })
     ).toBe(37.5)
     expect(
@@ -295,7 +315,7 @@ describe('requestDetailHelper', () => {
     ).toBe(0)
   })
 
-  test('calculateCacheHitRate uses openai formula for azure records and non-openai formula for claude compatibility routes', () => {
+  test('calculateCacheHitRate uses one denominator for azure records and claude compatibility routes', () => {
     expect(
       calculateCacheHitRate({
         endpoint: '/azure/chat/completions',
@@ -314,6 +334,6 @@ describe('requestDetailHelper', () => {
         cacheReadTokens: 30,
         cacheCreateTokens: 20
       })
-    ).toBe(60)
+    ).toBe(20)
   })
 })
