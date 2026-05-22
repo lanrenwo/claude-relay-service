@@ -2814,6 +2814,8 @@ const getCachedStats = (keyId) => {
   return cached?.stats || null
 }
 
+const getExportStats = (key) => getCachedStats(key.id) || null
+
 // 检查是否正在加载统计
 const isStatsLoading = (keyId) => {
   return statsLoading.value.has(keyId)
@@ -3326,6 +3328,11 @@ const calculateModelCost = (stat) => {
 
 // 获取日期范围内的请求数
 const getPeriodRequests = (key) => {
+  const stats = getExportStats(key)
+  if (stats && stats.requests !== undefined) {
+    return stats.requests
+  }
+
   // 根据全局日期筛选器返回对应的请求数
   if (globalDateFilter.type === 'custom') {
     // 自定义日期范围
@@ -3371,6 +3378,11 @@ const getPeriodRequests = (key) => {
 
 // 获取日期范围内的费用
 const getPeriodCost = (key) => {
+  const stats = getExportStats(key)
+  if (stats && stats.cost !== undefined) {
+    return Number(stats.cost) || 0
+  }
+
   // 根据全局日期筛选器返回对应的费用
   if (globalDateFilter.type === 'custom') {
     // 自定义日期范围，使用服务器返回的 usage['custom'].cost
@@ -3419,6 +3431,11 @@ const getPeriodCost = (key) => {
 
 // 获取日期范围内的token数量
 const getPeriodTokens = (key) => {
+  const stats = getExportStats(key)
+  if (stats && stats.tokens !== undefined) {
+    return stats.tokens
+  }
+
   // 根据全局日期筛选器返回对应的token数量
   if (globalDateFilter.type === 'custom') {
     // 自定义日期范围
@@ -3467,6 +3484,11 @@ const getPeriodTokens = (key) => {
 
 // 获取日期范围内的输入token数量
 const getPeriodInputTokens = (key) => {
+  const stats = getExportStats(key)
+  if (stats && stats.inputTokens !== undefined) {
+    return stats.inputTokens
+  }
+
   // 根据全局日期筛选器返回对应的输入token数量
   if (globalDateFilter.type === 'custom') {
     // 自定义日期范围
@@ -3515,6 +3537,11 @@ const getPeriodInputTokens = (key) => {
 
 // 获取日期范围内的输出token数量
 const getPeriodOutputTokens = (key) => {
+  const stats = getExportStats(key)
+  if (stats && stats.outputTokens !== undefined) {
+    return stats.outputTokens
+  }
+
   // 根据全局日期筛选器返回对应的输出token数量
   if (globalDateFilter.type === 'custom') {
     // 自定义日期范围
@@ -3563,6 +3590,11 @@ const getPeriodOutputTokens = (key) => {
 
 // 计算日期范围内的总费用（用于展开的详细统计）
 const calculatePeriodCost = (key) => {
+  const stats = getExportStats(key)
+  if (stats && stats.cost !== undefined) {
+    return Number(stats.cost) || 0
+  }
+
   // 如果没有展开，使用缓存的费用数据
   if (!apiKeyModelStats.value[key.id]) {
     return getPeriodCost(key)
