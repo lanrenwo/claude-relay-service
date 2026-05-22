@@ -18,6 +18,86 @@ const router = express.Router()
 
 // 📊 系统统计
 
+const UNTAGGED_LABEL = '未打标签'
+
+function getRecentMonthKeys(count) {
+  const months = []
+  const tzNow = redis.getDateInTimezone()
+
+  for (let i = count - 1; i >= 0; i--) {
+    const date = new Date(Date.UTC(tzNow.getUTCFullYear(), tzNow.getUTCMonth() - i, 1))
+    months.push(
+      `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+    )
+  }
+
+  return months
+}
+
+function getApiKeyTags(apiKey) {
+  const tags = Array.isArray(apiKey?.tags) ? apiKey.tags : []
+  const normalizedTags = tags
+    .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+    .filter(Boolean)
+
+  return normalizedTags.length > 0 ? normalizedTags : [UNTAGGED_LABEL]
+}
+
+function getMonthlyModelCost(data = {}, model = 'unknown') {
+  const ratedCostMicro = Number.parseInt(data.ratedCostMicro, 10)
+  const realCostMicro = Number.parseInt(data.realCostMicro, 10)
+
+  if (Number.isFinite(ratedCostMicro) && ratedCostMicro > 0) {
+    return ratedCostMicro / 1000000
+  }
+  if (Number.isFinite(realCostMicro) && realCostMicro > 0) {
+    return realCostMicro / 1000000
+  }
+
+  const inputTokens = Number.parseInt(data.inputTokens, 10) || 0
+  const outputTokens = Number.parseInt(data.outputTokens, 10) || 0
+  const cacheCreateTokens = Number.parseInt(data.cacheCreateTokens, 10) || 0
+  const cacheReadTokens = Number.parseInt(data.cacheReadTokens, 10) || 0
+  const ephemeral5mTokens = Number.parseInt(data.ephemeral5mTokens, 10) || 0
+  const ephemeral1hTokens = Number.parseInt(data.ephemeral1hTokens, 10) || 0
+
+  const hasUsage = inputTokens || outputTokens || cacheCreateTokens || cacheReadTokens
+  if (!hasUsage) {
+    return 0
+  }
+
+  const usage = {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    cache_creation_input_tokens: cacheCreateTokens,
+    cache_read_input_tokens: cacheReadTokens
+  }
+
+  if (ephemeral5mTokens > 0 || ephemeral1hTokens > 0) {
+    usage.cache_creation = {
+      ephemeral_5m_input_tokens: ephemeral5mTokens,
+      ephemeral_1h_input_tokens: ephemeral1hTokens
+    }
+  }
+
+  const costResult = CostCalculator.calculateCost(usage, model)
+  return costResult?.costs?.total || 0
+}
+
+function addTagMonthlyCost(rowsByTag, tag, month, cost) {
+  if (!rowsByTag.has(tag)) {
+    rowsByTag.set(tag, {
+      tag,
+      monthlyCosts: {},
+      totalCost: 0
+    })
+  }
+
+  const row = rowsByTag.get(tag)
+  row.monthlyCosts[month] = (row.monthlyCosts[month] || 0) + cost
+  row.totalCost += cost
+}
+
 // 获取系统概览
 router.get('/dashboard', authenticateAdmin, async (req, res) => {
   try {
@@ -350,6 +430,101 @@ router.get('/dashboard', authenticateAdmin, async (req, res) => {
   } catch (error) {
     logger.error('❌ Failed to get dashboard data:', error)
     return res.status(500).json({ error: 'Failed to get dashboard data', message: error.message })
+  }
+})
+
+// 获取最近 N 个月按 API Key 标签汇总的费用
+router.get('/dashboard/tag-monthly-costs', authenticateAdmin, async (req, res) => {
+  try {
+    const requestedMonths = Number.parseInt(req.query.months, 10)
+    const monthCount = Number.isFinite(requestedMonths)
+      ? Math.min(Math.max(requestedMonths, 1), 24)
+      : 12
+    const months = getRecentMonthKeys(monthCount)
+
+    const keyIds = await redis.scanApiKeyIds()
+    if (keyIds.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          months,
+          rows: [],
+          totals: {
+            monthlyCosts: Object.fromEntries(months.map((month) => [month, 0])),
+            totalCost: 0,
+            formattedTotalCost: CostCalculator.formatCost(0)
+          }
+        }
+      })
+    }
+
+    const apiKeys = await redis.batchGetApiKeys(keyIds)
+    const activeKeyMap = new Map(apiKeys.filter((key) => !key.isDeleted).map((key) => [key.id, key]))
+    const rowsByTag = new Map()
+    const totalMonthlyCosts = Object.fromEntries(months.map((month) => [month, 0]))
+
+    for (const month of months) {
+      const results = await redis.scanAndGetAllChunked(`usage:*:model:monthly:*:${month}`)
+
+      for (const { key, data } of results) {
+        const match = key.match(/^usage:([^:]+):model:monthly:(.+):(\d{4}-\d{2})$/)
+        if (!match) {
+          continue
+        }
+
+        const [, keyId, model, monthKey] = match
+        const apiKey = activeKeyMap.get(keyId)
+        if (!apiKey || monthKey !== month) {
+          continue
+        }
+
+        const cost = getMonthlyModelCost(data, model)
+        if (cost <= 0) {
+          continue
+        }
+
+        totalMonthlyCosts[month] += cost
+        for (const tag of getApiKeyTags(apiKey)) {
+          addTagMonthlyCost(rowsByTag, tag, month, cost)
+        }
+      }
+    }
+
+    const rows = [...rowsByTag.values()]
+      .map((row) => ({
+        ...row,
+        monthlyCosts: Object.fromEntries(
+          months.map((month) => [month, Number((row.monthlyCosts[month] || 0).toFixed(6))])
+        ),
+        totalCost: Number(row.totalCost.toFixed(6)),
+        formattedTotalCost: CostCalculator.formatCost(row.totalCost)
+      }))
+      .sort((a, b) => b.totalCost - a.totalCost)
+
+    const totalCost = Object.values(totalMonthlyCosts).reduce((sum, cost) => sum + cost, 0)
+    const totals = {
+      monthlyCosts: Object.fromEntries(
+        months.map((month) => [month, Number((totalMonthlyCosts[month] || 0).toFixed(6))])
+      ),
+      totalCost: Number(totalCost.toFixed(6)),
+      formattedTotalCost: CostCalculator.formatCost(totalCost)
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        months,
+        rows,
+        totals
+      }
+    })
+  } catch (error) {
+    logger.error('❌ Failed to get tag monthly costs:', error)
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to get tag monthly costs',
+      message: error.message
+    })
   }
 })
 

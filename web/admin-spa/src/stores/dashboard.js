@@ -1,7 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-import { getDashboardApi, getUsageCostsApi, getUsageStatsApi } from '@/utils/http_apis'
+import {
+  getDashboardApi,
+  getDashboardTagMonthlyCostsApi,
+  getUsageCostsApi,
+  getUsageStatsApi
+} from '@/utils/http_apis'
 import { showToast } from '@/utils/tools'
 
 export const useDashboardStore = defineStore('dashboard', () => {
@@ -65,6 +70,15 @@ export const useDashboardStore = defineStore('dashboard', () => {
     totalAccounts: 0,
     group: 'claude',
     groupLabel: 'Claude账户'
+  })
+  const tagMonthlyCostsData = ref({
+    months: [],
+    rows: [],
+    totals: {
+      monthlyCosts: {},
+      totalCost: 0,
+      formattedTotalCost: '$0.000000'
+    }
   })
 
   // 本地偏好
@@ -487,6 +501,25 @@ export const useDashboardStore = defineStore('dashboard', () => {
     }
   }
 
+  async function loadTagMonthlyCosts(months = 12) {
+    try {
+      const response = await getDashboardTagMonthlyCostsApi(months)
+      if (response.success) {
+        tagMonthlyCostsData.value = response.data || {
+          months: [],
+          rows: [],
+          totals: {
+            monthlyCosts: {},
+            totalCost: 0,
+            formattedTotalCost: '$0.000000'
+          }
+        }
+      }
+    } catch (error) {
+      console.error('加载标签月费用统计失败:', error)
+    }
+  }
+
   // 日期筛选相关方法
   function setDateFilterPreset(preset, options = {}) {
     const { silent = false, skipSave = false } = options
@@ -686,7 +719,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
       loadUsageTrend(days, effectiveGranularity),
       loadModelStats(modelPeriod, effectiveGranularity),
       loadApiKeysTrend(apiKeysTrendMetric.value, effectiveGranularity),
-      loadAccountUsageTrend(accountUsageGroup.value, effectiveGranularity)
+      loadAccountUsageTrend(accountUsageGroup.value, effectiveGranularity),
+      loadTagMonthlyCosts()
     ])
   }
 
@@ -721,6 +755,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     dashboardModelStats,
     apiKeysTrendData,
     accountUsageTrendData,
+    tagMonthlyCostsData,
     dateFilter,
     trendGranularity,
     apiKeysTrendMetric,
@@ -735,6 +770,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     loadModelStats,
     loadApiKeysTrend,
     loadAccountUsageTrend,
+    loadTagMonthlyCosts,
     setDateFilterPreset,
     onCustomDateRangeChange,
     setTrendGranularity,

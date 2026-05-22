@@ -46,6 +46,8 @@ export const getRedemptionHistoryByApiIdApi = (apiId, params = {}) =>
 export const getDashboardApi = () => request({ url: '/admin/dashboard', method: 'GET' })
 export const getTempUnavailableApi = () =>
   request({ url: '/admin/temp-unavailable', method: 'GET' })
+export const getDashboardTagMonthlyCostsApi = (months = 12) =>
+  request({ url: `/admin/dashboard/tag-monthly-costs?months=${months}`, method: 'GET' })
 export const getUsageCostsApi = (period) =>
   request({ url: `/admin/usage-costs?period=${period}`, method: 'GET' })
 export const getUsageStatsApi = (url) => request({ url, method: 'GET' })

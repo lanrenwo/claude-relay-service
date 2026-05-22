@@ -665,6 +665,108 @@
       </div>
     </div>
 
+    <!-- 标签月费用汇总 -->
+    <div class="mb-4 sm:mb-6 md:mb-8">
+      <div class="card p-4 sm:p-6">
+        <div class="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100 sm:text-lg">
+              标签月费用汇总
+            </h3>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400 sm:text-sm">
+              最近 12 个自然月；多标签 API Key 会计入每个标签
+            </p>
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 sm:text-sm">
+            合计：{{ tagMonthlyCostsData.totals?.formattedTotalCost || '$0.000000' }}
+          </div>
+        </div>
+
+        <div
+          v-if="!tagMonthlyCostsData.rows || tagMonthlyCostsData.rows.length === 0"
+          class="py-10 text-center text-sm text-gray-500 dark:text-gray-400"
+        >
+          暂无标签费用数据
+        </div>
+        <div v-else class="overflow-x-auto">
+          <table class="min-w-full">
+            <thead class="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                <th
+                  class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                >
+                  标签
+                </th>
+                <th
+                  v-for="month in tagMonthlyCostsData.months"
+                  :key="month"
+                  class="whitespace-nowrap px-3 py-2 text-right text-xs font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{ formatMonthLabel(month) }}
+                </th>
+                <th
+                  class="whitespace-nowrap px-3 py-2 text-right text-xs font-medium text-gray-700 dark:text-gray-300"
+                >
+                  合计
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-600">
+              <tr
+                v-for="row in tagMonthlyCostsData.rows"
+                :key="row.tag"
+                class="hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                <td
+                  class="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-2 text-sm font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                >
+                  <span
+                    class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+                  >
+                    <i class="fas fa-tag mr-1 text-[10px]" />
+                    {{ row.tag }}
+                  </span>
+                </td>
+                <td
+                  v-for="month in tagMonthlyCostsData.months"
+                  :key="`${row.tag}-${month}`"
+                  class="whitespace-nowrap px-3 py-2 text-right text-xs text-gray-600 dark:text-gray-400 sm:text-sm"
+                >
+                  {{ formatTagCost(row.monthlyCosts?.[month] || 0) }}
+                </td>
+                <td
+                  class="whitespace-nowrap px-3 py-2 text-right text-xs font-semibold text-green-600 sm:text-sm"
+                >
+                  {{ row.formattedTotalCost || formatTagCost(row.totalCost || 0) }}
+                </td>
+              </tr>
+            </tbody>
+            <tfoot class="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                <td
+                  class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-900 dark:bg-gray-700 dark:text-gray-100"
+                >
+                  月合计
+                </td>
+                <td
+                  v-for="month in tagMonthlyCostsData.months"
+                  :key="`total-${month}`"
+                  class="whitespace-nowrap px-3 py-2 text-right text-xs font-semibold text-gray-700 dark:text-gray-200 sm:text-sm"
+                >
+                  {{ formatTagCost(tagMonthlyCostsData.totals?.monthlyCosts?.[month] || 0) }}
+                </td>
+                <td
+                  class="whitespace-nowrap px-3 py-2 text-right text-xs font-semibold text-green-600 sm:text-sm"
+                >
+                  {{ tagMonthlyCostsData.totals?.formattedTotalCost || '$0.000000' }}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- Token使用趋势图 -->
     <div class="mb-4 sm:mb-6 md:mb-8">
       <div class="card p-4 sm:p-6">
@@ -797,6 +899,7 @@ const {
   trendData,
   apiKeysTrendData,
   accountUsageTrendData,
+  tagMonthlyCostsData,
   accountUsageGroup,
   formattedUptime,
   dateFilter,
@@ -957,6 +1060,16 @@ function formatCostValue(cost) {
     return `$${cost.toFixed(3)}`
   }
   return `$${cost.toFixed(6)}`
+}
+
+function formatTagCost(cost) {
+  return formatCostValue(Number(cost) || 0)
+}
+
+function formatMonthLabel(month) {
+  if (!month || typeof month !== 'string') return ''
+  const [year, monthNumber] = month.split('-')
+  return `${year}/${monthNumber}`
 }
 
 // 计算百分比
