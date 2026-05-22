@@ -3378,9 +3378,9 @@ const getPeriodRequests = (key) => {
 
 // 获取日期范围内的费用
 const getPeriodCost = (key) => {
-  const stats = getExportStats(key)
-  if (stats && stats.cost !== undefined) {
-    return Number(stats.cost) || 0
+  const cachedStats = getExportStats(key)
+  if (cachedStats && cachedStats.cost !== undefined) {
+    return Number(cachedStats.cost) || 0
   }
 
   // 根据全局日期筛选器返回对应的费用
@@ -3590,9 +3590,9 @@ const getPeriodOutputTokens = (key) => {
 
 // 计算日期范围内的总费用（用于展开的详细统计）
 const calculatePeriodCost = (key) => {
-  const stats = getExportStats(key)
-  if (stats && stats.cost !== undefined) {
-    return Number(stats.cost) || 0
+  const cachedStats = getExportStats(key)
+  if (cachedStats && cachedStats.cost !== undefined) {
+    return Number(cachedStats.cost) || 0
   }
 
   // 如果没有展开，使用缓存的费用数据
