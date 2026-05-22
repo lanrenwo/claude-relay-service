@@ -250,7 +250,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { showToast, formatNumber, formatDate } from '@/utils/tools'
-import CreateApiKeyModal from './CreateApiKeyModal.vue'
+import CreateApiKeyModal from './UserCreateApiKeyModal.vue'
 import ViewApiKeyModal from './ViewApiKeyModal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 
